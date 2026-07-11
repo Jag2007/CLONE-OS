@@ -1,0 +1,31 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: dcverse-postgres
+    environment:
+      POSTGRES_USER: cloneos
+      POSTGRES_PASSWORD: cloneos
+      POSTGRES_DB: cloneos
+    ports:
+      - "5432:5432"
+    volumes:
+      - dcverse-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cloneos -d cloneos"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: dcverse-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  dcverse-postgres-data:

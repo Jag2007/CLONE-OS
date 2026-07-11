@@ -1,0 +1,16 @@
+{
+  "name": "dcverse-fullstack",
+  "private": true,
+  "scripts": {
+    "install:all": "npm --prefix backend install && npm --prefix frontend install",
+    "dev": "npm run dev:backend & npm run dev:frontend",
+    "dev:local": "npm run infra:up && npm run seed:actors:local && (npm run dev:backend:local & npm run dev:frontend)",
+    "infra:up": "docker compose up -d postgres redis",
+    "infra:down": "docker compose down",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:backend:local": "env DB_HOST=127.0.0.1 DB_PORT=5432 DB_USERNAME=cloneos DB_PASSWORD=cloneos DB_NAME=cloneos DB_SSL=false REDIS_HOST=127.0.0.1 REDIS_PORT=6379 NODE_ENV=development npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend start",
+    "seed:actors:local": "env DB_HOST=127.0.0.1 DB_PORT=5432 DB_USERNAME=cloneos DB_PASSWORD=cloneos DB_NAME=cloneos DB_SSL=false REDIS_HOST=127.0.0.1 REDIS_PORT=6379 NODE_ENV=development npm --prefix backend run seed:actors",
+    "build": "npm --prefix backend run build && npm --prefix frontend run build"
+  }
+}
