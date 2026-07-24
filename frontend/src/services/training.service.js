@@ -3,8 +3,7 @@ import JSZip from "jszip";
 import { useAuthStore } from "../store/auth.store";
 import { authAxios } from "./url.service";
 
-const trainingBaseURL =
-  process.env.REACT_APP_TRAINING_API_URL || "http://localhost:8002";
+const trainingBaseURL = (process.env.REACT_APP_TRAINING_API_URL || "").trim();
 
 export const isTrainingServiceConfigured = () => Boolean(trainingBaseURL);
 
@@ -35,9 +34,9 @@ export const reserveCreditsForClone = async () => {
   return data;
 };
 
-/**
+ /**
  * Start LoRA training via POST /train.
- * @param {string} taskId      - Used as model_name on Replicate and as the S3 path prefix.
+ * @param {string} taskId      - Used as model_name and as the S3 path prefix.
  * @param {string} emotion     - UI-only label (no longer sent as trigger_word).
  * @param {File[]} imageFiles  - Individual image files; zipped client-side into a single .zip.
  * @returns {Promise<{ training_id: string, status: string, model_url: string|null }>}
@@ -82,7 +81,7 @@ export const getMyClone = async () => {
 };
 
 /**
- * Poll training status using the Replicate training_id returned by startTraining.
+ * Poll training status using the training_id returned by startTraining.
  * Backend status values: starting | processing | succeeded | failed | canceled
  * @param {string} trainingId - The training_id from the startTraining response.
  * @returns {Promise<{ training_id: string, status: string, s3_url: string|null, error: string|null }>}

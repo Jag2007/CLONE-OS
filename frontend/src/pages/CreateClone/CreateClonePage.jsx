@@ -59,7 +59,7 @@ export default function CreateClonePage() {
   const [existingClone, setExistingClone] = useState(null);
   const [loadingClone, setLoadingClone] = useState(true);
 
-  // Map Replicate status strings → UI labels
+  // Map provider status strings to UI labels
   const toUiStatus = (raw) =>
     ({
       starting: "Queued",
@@ -75,10 +75,10 @@ export default function CreateClonePage() {
   const token = useAuthStore((state) => state.token);
 
   const pollStatus = useCallback(
-    (replicateTrainingId) => {
+    (providerTrainingId) => {
       const id = setInterval(async () => {
         try {
-          const data = await getTrainingStatus(replicateTrainingId);
+          const data = await getTrainingStatus(providerTrainingId);
           const uiStatus = toUiStatus(data?.status);
           setTrainingStatus(uiStatus);
           if (uiStatus === "Completed") {
@@ -127,7 +127,7 @@ export default function CreateClonePage() {
     };
   }, [pollingId]);
 
-  // Fetch current user's clone on load; sync status from Replicate once, then show step 5 and poll if still in progress
+  // Fetch current user's clone on load; sync status once, then show step 5 and poll if still in progress
   const isTrainingInProgress = (c) =>
     c?.current_training_id &&
     (c?.training_status === "starting" || c?.training_status === "processing");
@@ -143,7 +143,7 @@ export default function CreateClonePage() {
         setExistingClone(data ?? null);
         if (data?.model_name) setTaskId(data.model_name);
         if (!data?.current_training_id) return;
-        // Sync status from Replicate on first load (backend updates DB if there's a mismatch)
+        // Sync status on first load (backend updates DB if there's a mismatch)
         try {
           const statusData = await getTrainingStatus(data.current_training_id);
           const uiStatus = toUiStatus(statusData?.status);
@@ -275,10 +275,10 @@ export default function CreateClonePage() {
     }
     try {
       const result = await startTraining(trimmedTaskId, emotion, files);
-      const replicateTrainingId = result?.training_id;
-      if (!replicateTrainingId)
+      const providerTrainingId = result?.training_id;
+      if (!providerTrainingId)
         throw new Error("No training_id returned from server.");
-      setTrainingId(replicateTrainingId);
+      setTrainingId(providerTrainingId);
       setTrainingS3Url(null);
       setStep(5);
       setTrainingStatus("Queued");
@@ -286,7 +286,7 @@ export default function CreateClonePage() {
         title: "Training started",
         description: "Your clone is being trained.",
       });
-      pollStatus(replicateTrainingId);
+      pollStatus(providerTrainingId);
     } catch (err) {
       const detail =
         err?.response?.data?.detail ??

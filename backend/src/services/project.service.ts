@@ -11,6 +11,11 @@ import { Scene, SceneStatus } from "../entities/Scene";
 import { SceneSketch, SketchSource } from "../entities/SceneSketch";
 import axios from "axios";
 import { StorageService } from "./storage.service";
+import fs from "fs/promises";
+import path from "path";
+import os from "os";
+import { execFile } from "child_process";
+import { promisify } from "util";
 
 // Mirrors the multer fileFilter in src/routes/project.routes.ts.
 // Keep these in sync — both the filter and the S3 path builder rely on this set.
@@ -20,15 +25,37 @@ const SKETCH_MIME_TO_EXT: Record<string, string> = {
   "image/jpg": "jpg",
   "image/webp": "webp",
 };
+const BACKEND_ROOT = path.resolve(__dirname, "../..");
+const execFileAsync = promisify(execFile);
 
-type ReplicatePrediction = {
+type RunPodJobResponse = {
   id?: string;
+  jobId?: string;
   status?: string;
   output?: unknown;
   error?: unknown;
-  urls?: {
-    get?: string;
-  };
+  delayTime?: number;
+  executionTime?: number;
+};
+
+type RunPodRunResponse = RunPodJobResponse & {
+  error?: unknown;
+};
+
+type UserCloneInfo = {
+  model_name?: string | null;
+  s3_url?: string | null;
+  weights_url?: string | null;
+};
+
+type RunPodImageVariables = {
+  sketchBase64: string;
+  prompt: string;
+  triggerWord: string;
+  loraName: string;
+  loraUrl: string;
+  width: number;
+  height: number;
 };
 
 export class ProjectService {
@@ -53,44 +80,76 @@ export class ProjectService {
   }
 
   private getWorkerAuthHeaders(): Record<string, string> {
-    return config.workers.videoApiKey
-      ? { Authorization: `Bearer ${config.workers.videoApiKey}` }
-      : {};
+    if (!config.workers.videoApiKey) return {};
+    const authScheme = config.workers.videoAuthScheme.trim();
+    return {
+      Authorization: authScheme
+        ? `${authScheme} ${config.workers.videoApiKey}`
+        : config.workers.videoApiKey,
+    };
   }
 
-  private getReplicateHeaders(): Record<string, string> {
-    if (!config.workers.replicateApiToken) {
+  private getRunPodHeaders(): Record<string, string> {
+    if (!config.workers.runpodApiKey) {
       throw new AppError(
         400,
-        "REPLICATE_API_TOKEN is missing in backend/.env. Add a valid Replicate API token and restart the backend.",
+        "RUNPOD_API_KEY is missing in backend/.env. Add a valid RunPod API key and restart the backend.",
       );
     }
 
+    const authScheme = config.workers.runpodAuthScheme.trim();
+
     return {
-      Authorization: `Bearer ${config.workers.replicateApiToken}`,
+      Authorization: authScheme
+        ? `${authScheme} ${config.workers.runpodApiKey}`
+        : config.workers.runpodApiKey,
       "Content-Type": "application/json",
     };
   }
 
-  private buildReplicateVideoInput(imageUrl: string, prompt: string) {
+  private getRunPodEndpointBaseUrl(endpointId = config.workers.runpodEndpointId): string {
+    if (!endpointId) {
+      throw new AppError(
+        400,
+        "RUNPOD_ENDPOINT_ID is missing in backend/.env. Create a RunPod Serverless endpoint and add its endpoint ID.",
+      );
+    }
+
+    return `${config.workers.runpodBaseUrl}/${endpointId}`;
+  }
+
+  private getValueByPath(source: unknown, path: string): unknown {
+    return path.split(".").reduce<unknown>((current, part) => {
+      if (current == null) return undefined;
+      if (/^\d+$/.test(part) && Array.isArray(current)) {
+        return current[Number(part)];
+      }
+      if (typeof current === "object") {
+        return (current as Record<string, unknown>)[part];
+      }
+      return undefined;
+    }, source);
+  }
+
+  private buildRunPodVideoInput(imageUrl: string, prompt: string) {
     const input: Record<string, string | number> = {
-      [config.workers.replicateVideoImageField]: imageUrl,
-      [config.workers.replicateVideoPromptField]: prompt,
+      [config.workers.runpodVideoImageField]: imageUrl,
+      [config.workers.runpodVideoPromptField]: prompt,
     };
 
-    const duration = Number(config.workers.replicateVideoDuration);
+    const duration = Number(config.workers.runpodVideoDuration);
     if (Number.isFinite(duration) && duration > 0) {
       input.duration = duration;
     }
 
-    if (config.workers.replicateVideoAspectRatio) {
-      input.aspect_ratio = config.workers.replicateVideoAspectRatio;
+    if (config.workers.runpodVideoAspectRatio) {
+      input.aspect_ratio = config.workers.runpodVideoAspectRatio;
     }
 
     return input;
   }
 
-  private extractReplicateOutputUrl(output: unknown): string | null {
+  private extractVideoUrl(output: unknown): string | null {
     if (!output) return null;
 
     if (typeof output === "string") {
@@ -99,15 +158,23 @@ export class ProjectService {
 
     if (Array.isArray(output)) {
       for (const item of output) {
-        const url = this.extractReplicateOutputUrl(item);
+        const url = this.extractVideoUrl(item);
         if (url) return url;
       }
       return null;
     }
 
     if (typeof output === "object") {
-      for (const value of Object.values(output as Record<string, unknown>)) {
-        const url = this.extractReplicateOutputUrl(value);
+      const outputRecord = output as Record<string, unknown>;
+      const configuredValue = this.getValueByPath(
+        outputRecord,
+        config.workers.runpodVideoOutputField,
+      );
+      const configuredUrl = this.extractVideoUrl(configuredValue);
+      if (configuredUrl) return configuredUrl;
+
+      for (const value of Object.values(outputRecord)) {
+        const url = this.extractVideoUrl(value);
         if (url) return url;
       }
     }
@@ -115,78 +182,405 @@ export class ProjectService {
     return null;
   }
 
-  private async waitForReplicateVideo(
-    initialPrediction: ReplicatePrediction,
-  ): Promise<string> {
-    let prediction = initialPrediction;
-    const headers = this.getReplicateHeaders();
-    const terminalStatuses = new Set(["succeeded", "failed", "canceled"]);
+  private buildWanVideoInput(imageUrl: string, prompt: string) {
+    const duration = Number(config.workers.videoDuration);
+    const resolvedDuration = Number.isFinite(duration) && duration > 0 ? duration : 5;
+    const model = config.workers.videoModel;
+    const isLegacy = model.startsWith("wan2.1-");
+    const input: Record<string, unknown> = {
+      [config.workers.videoPromptField]: prompt,
+    };
 
-    for (let attempt = 0; attempt < 90; attempt++) {
-      if (prediction.status === "succeeded") {
-        const videoUrl = this.extractReplicateOutputUrl(prediction.output);
+    if (isLegacy) {
+      input.img_url = imageUrl;
+    } else {
+      input.media = [{ type: "first_frame", url: imageUrl }];
+    }
+
+    return {
+      model,
+      input,
+      parameters: {
+        resolution: config.workers.videoResolution,
+        ...(isLegacy
+          ? {}
+          : {
+              ratio: config.workers.videoRatio,
+              [config.workers.videoDurationField]: resolvedDuration,
+            }),
+      },
+    };
+  }
+
+  private getWanTaskUrl(taskId: string): string {
+    const generateUrl = new URL(config.workers.videoWorkerApiUrl);
+    if (generateUrl.pathname.endsWith("/api/generate")) {
+      generateUrl.pathname = generateUrl.pathname.replace(
+        /\/api\/generate$/,
+        `/api/tasks/${taskId}`,
+      );
+      return generateUrl.toString();
+    }
+
+    return new URL(`/api/tasks/${taskId}`, generateUrl.origin).toString();
+  }
+
+  private getWanUploadUrl(): string {
+    const generateUrl = new URL(config.workers.videoWorkerApiUrl);
+    if (generateUrl.pathname.endsWith("/api/generate")) {
+      generateUrl.pathname = generateUrl.pathname.replace(/\/api\/generate$/, "/api/upload");
+      return generateUrl.toString();
+    }
+
+    return new URL("/api/upload", generateUrl.origin).toString();
+  }
+
+  private async uploadImageForWan(imageUrl: string): Promise<string> {
+    const imageResponse = await axios.get(imageUrl, {
+      responseType: "arraybuffer",
+      timeout: 120000,
+    });
+    const imageBuffer = Buffer.from(imageResponse.data as ArrayBuffer);
+    const boundary = `dcverse-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const contentType = imageResponse.headers["content-type"] || "image/png";
+    const ext = contentType.includes("jpeg") || contentType.includes("jpg")
+      ? "jpg"
+      : contentType.includes("webp")
+        ? "webp"
+        : "png";
+    const head = Buffer.from(
+      [
+        `--${boundary}`,
+        `Content-Disposition: form-data; name="file"; filename="scene.${ext}"`,
+        `Content-Type: ${contentType}`,
+        "",
+        "",
+      ].join("\r\n"),
+    );
+    const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+
+    const uploadResponse = await axios.post(
+      this.getWanUploadUrl(),
+      Buffer.concat([head, imageBuffer, tail]),
+      {
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+        },
+        timeout: 120000,
+      },
+    );
+
+    if (!uploadResponse.data?.url) {
+      throw new AppError(
+        502,
+        `Alan upload failed before WAN video generation: ${JSON.stringify(uploadResponse.data)}`,
+      );
+    }
+
+    return uploadResponse.data.url;
+  }
+
+  private async waitForWanVideo(taskId: string): Promise<string> {
+    for (let attempt = 0; attempt < config.workers.runpodMaxPollAttempts; attempt++) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, config.workers.runpodPollIntervalMs),
+      );
+
+      const response = await axios.get(this.getWanTaskUrl(taskId), {
+        timeout: 30000,
+      });
+      const status = String(
+        this.getValueByPath(response.data, config.workers.videoTaskStatusField) || "",
+      ).toUpperCase();
+
+      if (status === "SUCCEEDED") {
+        const configuredValue = this.getValueByPath(
+          response.data,
+          config.workers.videoOutputField,
+        );
+        const configuredUrl = this.extractVideoUrl(configuredValue);
+        const fallbackUrl = this.extractVideoUrl(response.data);
+        const videoUrl = configuredUrl || fallbackUrl;
         if (!videoUrl) {
           throw new AppError(
             502,
-            "Replicate finished but did not return a video URL.",
+            `WAN task succeeded but no video URL was found at ${config.workers.videoOutputField}.`,
           );
         }
         return videoUrl;
       }
 
-      if (prediction.status && terminalStatuses.has(prediction.status)) {
+      if (status === "FAILED" || status === "CANCELED" || status === "CANCELLED") {
         throw new AppError(
           502,
-          `Replicate video generation ${prediction.status}: ${JSON.stringify(prediction.error ?? "No error details")}`,
+          `WAN video task ${status}: ${JSON.stringify(response.data?.output?.message || response.data?.message || response.data)}`,
         );
       }
-
-      if (!prediction.urls?.get) {
-        throw new AppError(
-          502,
-          "Replicate response did not include a polling URL.",
-        );
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 5000));
-      const pollResponse = await axios.get<ReplicatePrediction>(
-        prediction.urls.get,
-        { headers, timeout: 30000 },
-      );
-      prediction = pollResponse.data;
     }
 
-    throw new AppError(504, "Replicate video generation timed out.");
+    throw new AppError(504, "WAN video generation timed out.");
   }
 
-  private async createReplicateVideo(
-    imageUrl: string,
-    prompt: string,
-  ): Promise<string> {
-    if (!config.workers.replicateVideoModel) {
-      throw new AppError(
-        400,
-        "REPLICATE_VIDEO_MODEL is missing in backend/.env.",
-      );
+  private async createWanVideoClip(imageUrl: string, prompt: string): Promise<string> {
+    if (!config.workers.videoWorkerApiUrl) {
+      throw new AppError(400, "VIDEO_WORKER_API_URL is missing in backend/.env.");
     }
 
     try {
-      const response = await axios.post<ReplicatePrediction>(
-        "https://api.replicate.com/v1/predictions",
-        {
-          version: config.workers.replicateVideoModel,
-          input: this.buildReplicateVideoInput(imageUrl, prompt),
-        },
+      const publicImageUrl = await this.uploadImageForWan(imageUrl);
+      const response = await axios.post(
+        config.workers.videoWorkerApiUrl,
+        this.buildWanVideoInput(publicImageUrl, prompt),
         {
           headers: {
-            ...this.getReplicateHeaders(),
-            Prefer: "wait=60",
+            "Content-Type": "application/json",
+            ...this.getWorkerAuthHeaders(),
           },
-          timeout: 65000,
+          timeout: 900000,
         },
       );
 
-      return this.waitForReplicateVideo(response.data);
+      const taskIdValue = this.getValueByPath(
+        response.data,
+        config.workers.videoTaskIdField,
+      );
+      if (typeof taskIdValue === "string" && taskIdValue) {
+        return this.waitForWanVideo(taskIdValue);
+      }
+
+      const configuredValue = this.getValueByPath(
+        response.data,
+        config.workers.videoOutputField,
+      );
+      const configuredUrl = this.extractVideoUrl(configuredValue);
+      const fallbackUrl = this.extractVideoUrl(response.data);
+      const videoUrl = configuredUrl || fallbackUrl;
+
+      if (!videoUrl) {
+        throw new AppError(
+          502,
+          `WAN video completed but no video URL was found at ${config.workers.videoOutputField}.`,
+        );
+      }
+
+      return videoUrl;
+    } catch (error: any) {
+      if (error instanceof AppError) throw error;
+
+      const status = error?.response?.status;
+      const providerMessage =
+        error?.response?.data?.error ||
+        error?.response?.data?.message ||
+        error?.code ||
+        error?.message;
+
+      if (status === 401 || status === 403) {
+        throw new AppError(
+          502,
+          "WAN rejected VIDEO_API_KEY. Check backend/.env.",
+        );
+      }
+
+      throw new AppError(
+        502,
+        `WAN video generation failed at ${config.workers.videoWorkerApiUrl}: ${providerMessage || "Unknown error"}`,
+      );
+    }
+  }
+
+  private async stitchVideoClips(
+    clipUrls: string[],
+    projectId: string,
+  ): Promise<string> {
+    if (clipUrls.length === 1) return clipUrls[0];
+
+    const workDir = await fs.mkdtemp(path.join(os.tmpdir(), `dcverse-${projectId}-`));
+
+    try {
+      const clipPaths: string[] = [];
+      for (let i = 0; i < clipUrls.length; i++) {
+        const response = await axios.get(clipUrls[i], {
+          responseType: "arraybuffer",
+          timeout: 300000,
+        });
+        const clipPath = path.join(workDir, `clip-${String(i).padStart(2, "0")}.mp4`);
+        await fs.writeFile(clipPath, Buffer.from(response.data as ArrayBuffer));
+        clipPaths.push(clipPath);
+      }
+
+      const listPath = path.join(workDir, "clips.txt");
+      await fs.writeFile(
+        listPath,
+        clipPaths.map((clipPath) => `file '${clipPath.replace(/'/g, "'\\''")}'`).join("\n"),
+      );
+
+      const outputPath = path.join(workDir, "final.mp4");
+      await execFileAsync("ffmpeg", [
+        "-y",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        listPath,
+        "-c",
+        "copy",
+        outputPath,
+      ]);
+
+      const finalBuffer = await fs.readFile(outputPath);
+      return this.storageService.uploadBuffer(
+        finalBuffer,
+        `projects/${projectId}/videos/final_${Date.now()}.mp4`,
+        "video/mp4",
+      );
+    } finally {
+      await fs.rm(workDir, { recursive: true, force: true });
+    }
+  }
+
+  private extractBase64Image(output: unknown): string | null {
+    if (!output) return null;
+
+    if (typeof output === "string") {
+      if (output.startsWith("data:image/")) {
+        return output.split(",", 2)[1] || null;
+      }
+      return output;
+    }
+
+    if (Array.isArray(output)) {
+      for (const item of output) {
+        const data = this.extractBase64Image(item);
+        if (data) return data;
+      }
+      return null;
+    }
+
+    if (typeof output === "object") {
+      const outputRecord = output as Record<string, unknown>;
+      const configuredValue = this.getValueByPath(
+        outputRecord,
+        config.workers.runpodImageOutputField,
+      );
+      const configuredData = this.extractBase64Image(configuredValue);
+      if (configuredData) return configuredData;
+
+      for (const value of Object.values(outputRecord)) {
+        const data = this.extractBase64Image(value);
+        if (data) return data;
+      }
+    }
+
+    return null;
+  }
+
+  private async waitForRunPodJob(
+    initialJob: RunPodJobResponse,
+    endpointId: string,
+  ): Promise<RunPodJobResponse> {
+    let job = initialJob;
+    const jobId = job.id || job.jobId;
+    const headers = this.getRunPodHeaders();
+    const endpointBaseUrl = this.getRunPodEndpointBaseUrl(endpointId);
+    const terminalStatuses = new Set([
+      "COMPLETED",
+      "FAILED",
+      "CANCELLED",
+      "CANCELED",
+      "TIMED_OUT",
+    ]);
+
+    if (!jobId) {
+      throw new AppError(502, "RunPod did not return a job ID.");
+    }
+
+    for (let attempt = 0; attempt < config.workers.runpodMaxPollAttempts; attempt++) {
+      const status = job.status?.toUpperCase();
+
+      if (status === "COMPLETED") {
+        return job;
+      }
+
+      if (status && terminalStatuses.has(status)) {
+        throw new AppError(
+          502,
+          `RunPod generation ${status}: ${JSON.stringify(job.error ?? "No error details")}`,
+        );
+      }
+
+      await new Promise((resolve) =>
+        setTimeout(resolve, config.workers.runpodPollIntervalMs),
+      );
+      const pollResponse = await axios.get<RunPodJobResponse>(
+        `${endpointBaseUrl}/status/${jobId}`,
+        { headers, timeout: 30000 },
+      );
+      job = pollResponse.data;
+    }
+
+    throw new AppError(504, "RunPod generation timed out.");
+  }
+
+  private async submitRunPodJob(
+    endpointId: string,
+    input: unknown,
+  ): Promise<RunPodJobResponse> {
+    const endpointBaseUrl = this.getRunPodEndpointBaseUrl(endpointId);
+    const body =
+      input &&
+      typeof input === "object" &&
+      !Array.isArray(input) &&
+      Object.prototype.hasOwnProperty.call(input, "input")
+        ? input
+        : { input };
+
+    const response = await axios.post<RunPodRunResponse>(
+      `${endpointBaseUrl}/runsync`,
+      JSON.stringify(body),
+      {
+        headers: this.getRunPodHeaders(),
+        timeout: config.workers.runpodExecutionTimeoutMs,
+      },
+    );
+
+    const status = response.data.status?.toUpperCase();
+    if (status === "COMPLETED" || response.data.output) {
+      return response.data;
+    }
+
+    if (status === "FAILED" || status === "CANCELLED" || status === "CANCELED") {
+      throw new AppError(
+        502,
+        `RunPod generation ${status}: ${JSON.stringify(response.data.error ?? "No error details")}`,
+      );
+    }
+
+    return this.waitForRunPodJob(response.data, endpointId);
+  }
+
+  private async createRunPodVideo(
+    imageUrl: string,
+    prompt: string,
+  ): Promise<string> {
+    try {
+      const endpointId = config.workers.runpodEndpointId;
+      if (!endpointId) {
+        throw new AppError(400, "RUNPOD_ENDPOINT_ID is missing in backend/.env.");
+      }
+
+      const job = await this.submitRunPodJob(
+        endpointId,
+        this.buildRunPodVideoInput(imageUrl, prompt),
+      );
+      const videoUrl = this.extractVideoUrl(job.output);
+      if (!videoUrl) {
+        throw new AppError(
+          502,
+          `RunPod completed but did not return a video URL in output.${config.workers.runpodVideoOutputField}.`,
+        );
+      }
+      return videoUrl;
     } catch (error: any) {
       if (error instanceof AppError) throw error;
 
@@ -199,20 +593,27 @@ export class ProjectService {
       if (status === 401 || status === 403) {
         throw new AppError(
           502,
-          "Replicate rejected the API token. Put a valid Replicate token in REPLICATE_API_TOKEN and restart the backend.",
+          "RunPod rejected the API key. Put a valid RunPod key in RUNPOD_API_KEY and restart the backend.",
+        );
+      }
+
+      if (status === 404) {
+        throw new AppError(
+          502,
+          "RunPod endpoint was not found. Check RUNPOD_ENDPOINT_ID.",
         );
       }
 
       if (status === 422 || status === 400) {
         throw new AppError(
           502,
-          `Replicate rejected the video request. Check REPLICATE_VIDEO_MODEL and input field env vars. ${providerMessage || ""}`.trim(),
+          `RunPod rejected the video request. Check RUNPOD_VIDEO_* input field env vars and your worker handler schema. ${providerMessage || ""}`.trim(),
         );
       }
 
       throw new AppError(
         502,
-        `Replicate video generation failed: ${providerMessage || "Unknown error"}`,
+        `RunPod video generation failed: ${providerMessage || "Unknown error"}`,
       );
     }
   }
@@ -242,6 +643,165 @@ export class ProjectService {
     }
 
     throw new Error("OpenAI image response did not include image bytes or URL");
+  }
+
+  private async imageUrlToBase64(url: string): Promise<string> {
+    const response = await axios.get(url, {
+      responseType: "arraybuffer",
+      timeout: 120000,
+    });
+    return Buffer.from(response.data as ArrayBuffer).toString("base64");
+  }
+
+  private async getCurrentUserClone(authHeader?: string): Promise<UserCloneInfo | null> {
+    if (!authHeader) return null;
+
+    try {
+      const response = await axios.get<UserCloneInfo>(
+        `${config.workers.trainingApiUrl}/me/clone`,
+        {
+          headers: { Authorization: authHeader },
+          timeout: 30000,
+        },
+      );
+      return response.data ?? null;
+    } catch (error: any) {
+      if (error?.response?.status === 404) return null;
+      console.warn(
+        "Could not fetch current user clone:",
+        error?.response?.data?.detail || error?.response?.data?.error || error?.message,
+      );
+      return null;
+    }
+  }
+
+  private replaceTemplateVariables(value: unknown, vars: RunPodImageVariables): unknown {
+    if (typeof value === "string") {
+      const replacements: Record<string, string> = {
+        "{{SKETCH_BASE64}}": vars.sketchBase64,
+        "{{PROMPT}}": vars.prompt,
+        "{{TRIGGER_WORD}}": vars.triggerWord,
+        "{{LORA_NAME}}": vars.loraName,
+        "{{LORA_URL}}": vars.loraUrl,
+        "{{WIDTH}}": String(vars.width),
+        "{{HEIGHT}}": String(vars.height),
+      };
+
+      return Object.entries(replacements).reduce(
+        (result, [token, replacement]) => result.split(token).join(replacement),
+        value,
+      );
+    }
+
+    if (Array.isArray(value)) {
+      return value.map((item) => this.replaceTemplateVariables(item, vars));
+    }
+
+    if (value && typeof value === "object") {
+      return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>).map(([key, item]) => [
+          key,
+          this.replaceTemplateVariables(item, vars),
+        ]),
+      );
+    }
+
+    return value;
+  }
+
+  private async buildRunPodImageInput(vars: RunPodImageVariables): Promise<unknown> {
+    if (config.workers.runpodImageInputTemplatePath) {
+      const templatePath = path.isAbsolute(config.workers.runpodImageInputTemplatePath)
+        ? config.workers.runpodImageInputTemplatePath
+        : path.resolve(BACKEND_ROOT, config.workers.runpodImageInputTemplatePath);
+      const rawTemplate = await fs.readFile(templatePath, "utf8");
+      const template = JSON.parse(rawTemplate);
+      const payload = this.replaceTemplateVariables(template, vars);
+
+      if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+        const payloadRecord = payload as Record<string, any>;
+        const input = payloadRecord.input;
+        const workflow = input?.workflow;
+
+        if (workflow && typeof workflow === "object") {
+          if (workflow["19"]?.inputs) {
+            workflow["19"].inputs.value = vars.prompt;
+          }
+          if (workflow["21"]?.inputs) {
+            workflow["21"].inputs.image = "image.png";
+          }
+          if (workflow["22"]?.inputs && vars.loraName) {
+            workflow["22"].inputs.lora_name = vars.loraName;
+          }
+        }
+
+        if (input && Array.isArray(input.images)) {
+          input.images[0] = {
+            ...(input.images[0] || {}),
+            name: "image.png",
+            image: vars.sketchBase64,
+          };
+        }
+      }
+
+      return payload;
+    }
+
+    throw new AppError(
+      500,
+      "RunPod final-image workflow is missing. Add final_input.json and set RUNPOD_IMAGE_INPUT_TEMPLATE_PATH in backend/.env.",
+    );
+  }
+
+  private async createRunPodFinalImage(
+    scene: Scene,
+    actor: any,
+    authHeader?: string,
+  ): Promise<Buffer> {
+    if (!scene.sketchUrl) {
+      throw new AppError(
+        400,
+        `Scene ${scene.sequenceOrder} needs a sketch before final image generation.`,
+      );
+    }
+
+    const endpointId = config.workers.runpodImageEndpointId;
+    if (!endpointId) {
+      throw new AppError(
+        400,
+        "RUNPOD_IMAGE_ENDPOINT_ID or RUNPOD_ENDPOINT_ID is missing in backend/.env.",
+      );
+    }
+
+    const clone = await this.getCurrentUserClone(authHeader);
+    const cloneName = clone?.model_name?.trim();
+    const triggerWord = cloneName || actor.triggerWord || actor.name?.toLowerCase();
+    const loraUrl = clone?.s3_url || clone?.weights_url || "";
+    const loraName = cloneName ? `${cloneName}.safetensors` : "";
+    const basePrompt = scene.aiPrompt || scene.scriptText || "";
+    const prompt = `full body shot of ${triggerWord}, ${basePrompt}, photorealistic, cinematic lighting, 16:9`;
+
+    const sketchBase64 = await this.imageUrlToBase64(scene.sketchUrl);
+    const input = await this.buildRunPodImageInput({
+      sketchBase64,
+      prompt,
+      triggerWord,
+      loraName,
+      loraUrl,
+      width: config.workers.runpodImageWidth,
+      height: config.workers.runpodImageHeight,
+    });
+
+    const job = await this.submitRunPodJob(endpointId, input);
+    const outputBase64 = this.extractBase64Image(job.output);
+    if (!outputBase64) {
+      throw new AppError(
+        502,
+        `RunPod completed but did not return base64 image data at output.${config.workers.runpodImageOutputField}.`,
+      );
+    }
+
+    return Buffer.from(outputBase64.replace(/^data:image\/\w+;base64,/, ""), "base64");
   }
 
   async createProject(data: CreateProjectDTO): Promise<Project> {
@@ -330,28 +890,13 @@ export class ProjectService {
     const scenes = [...(project.scenes ?? [])].sort(
       (a, b) => a.sequenceOrder - b.sequenceOrder,
     );
-    const sourceScene = scenes.find((scene) => scene.finalImageUrl || scene.sketchUrl);
-    const sourceImageUrl = sourceScene?.finalImageUrl || sourceScene?.sketchUrl;
-
-    if (!sourceImageUrl) {
+    const scenesWithFinalImages = scenes.filter((scene) => scene.finalImageUrl);
+    if (scenesWithFinalImages.length === 0) {
       throw new AppError(
         400,
-        "Generate or upload storyboard images before generating video.",
+        "Generate final realistic images before generating video.",
       );
     }
-
-    const storyboardPrompt = scenes
-      .map((scene) => `Scene ${scene.sequenceOrder}: ${scene.scriptText || scene.aiPrompt || ""}`)
-      .filter(Boolean)
-      .join("\n");
-    const videoPrompt = [
-      project.scriptText,
-      storyboardPrompt,
-      actor?.name ? `Featured actor: ${actor.name}.` : "",
-    ]
-      .filter(Boolean)
-      .join("\n")
-      .slice(0, 2000);
 
     // 3. Check and deduct credits transactionally
     await this.userService.deductCredits(userId, actor.costPerVideo);
@@ -363,7 +908,22 @@ export class ProjectService {
     });
 
     try {
-      const videoUrl = await this.createReplicateVideo(sourceImageUrl, videoPrompt);
+      const clipUrls: string[] = [];
+      for (const scene of scenesWithFinalImages) {
+        const prompt = [
+          scene.aiPrompt || scene.scriptText || "",
+          scene.scriptText ? `Action: ${scene.scriptText}` : "",
+          "Generate a smooth 5 second commercial video clip from this image.",
+        ]
+          .filter(Boolean)
+          .join("\n")
+          .slice(0, 2000);
+
+        const clipUrl = await this.createWanVideoClip(scene.finalImageUrl!, prompt);
+        clipUrls.push(clipUrl);
+      }
+
+      const videoUrl = await this.stitchVideoClips(clipUrls, projectId);
       await this.projectRepository.update(projectId, {
         status: ProjectStatus.COMPLETED,
         storageUrl: videoUrl,
@@ -758,7 +1318,7 @@ You are an expert cinematographer and visual storytelling AI. Your job is to tra
     return scene;
   }
 
-  async generateFinalImages(projectId: string): Promise<Scene[]> {
+  async generateFinalImages(projectId: string, authHeader?: string): Promise<Scene[]> {
     const project = await this.projectRepository.findOne({
       where: { id: projectId },
     });
@@ -775,6 +1335,7 @@ You are an expert cinematographer and visual storytelling AI. Your job is to tra
     });
 
     const updatedScenes: Scene[] = [];
+    const failedSceneErrors: string[] = [];
 
     for (const scene of scenes) {
       // OPTIMIZATION: Skip if already has an image
@@ -784,8 +1345,22 @@ You are an expert cinematographer and visual storytelling AI. Your job is to tra
       }
 
       // Use the helper function
-      const updated = await this.processSceneImage(scene, actor, projectId);
+      const updated = await this.processSceneImage(scene, actor, projectId, authHeader);
       if (updated) updatedScenes.push(updated);
+      else failedSceneErrors.push(`Scene ${scene.sequenceOrder}`);
+    }
+
+    if (updatedScenes.length === 0) {
+      throw new AppError(
+        502,
+        "Final image generation failed for every scene. RunPod needs final_input.json with the workflow parameter before realistic images can be created.",
+      );
+    }
+
+    if (failedSceneErrors.length > 0) {
+      console.warn(
+        `Final image generation skipped/failed for: ${failedSceneErrors.join(", ")}`,
+      );
     }
 
     project.status = "casting" as any;
@@ -795,7 +1370,11 @@ You are an expert cinematographer and visual storytelling AI. Your job is to tra
   }
 
   // 2. NEW: Regenerate Single Scene
-  async regenerateScene(sceneId: string, newPrompt?: string): Promise<Scene> {
+  async regenerateScene(
+    sceneId: string,
+    newPrompt?: string,
+    authHeader?: string,
+  ): Promise<Scene> {
     const scene = await this.sceneRepository.findOne({
       where: { id: sceneId },
       relations: ["project"], // Need access to parent project
@@ -818,7 +1397,7 @@ You are an expert cinematographer and visual storytelling AI. Your job is to tra
     if (!actor) throw new AppError(404, "Actor not found");
 
     // Force generate (helper function)
-    const updated = await this.processSceneImage(scene, actor, project.id);
+    const updated = await this.processSceneImage(scene, actor, project.id, authHeader);
 
     if (!updated) throw new AppError(500, "Image generation failed");
     return updated;
@@ -829,14 +1408,10 @@ You are an expert cinematographer and visual storytelling AI. Your job is to tra
     scene: Scene,
     actor: any,
     projectId: string,
+    authHeader?: string,
   ): Promise<Scene | null> {
     try {
-      const basePrompt = scene.aiPrompt || scene.scriptText;
-      const finalPrompt = `full body shot of ${actor.triggerWord}, ${basePrompt}, photorealistic, 8k, cinematic lighting`;
-
-      console.log(`Generating: ${finalPrompt}`);
-
-      const imageBuffer = await this.generateOpenAIImageBuffer(finalPrompt);
+      const imageBuffer = await this.createRunPodFinalImage(scene, actor, authHeader);
 
       if (imageBuffer) {
         // Add a timestamp to the path to avoid S3 caching if regenerating

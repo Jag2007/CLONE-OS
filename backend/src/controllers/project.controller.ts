@@ -268,9 +268,10 @@ export class ProjectController {
   ): Promise<void> => {
     try {
       const { id } = req.params;
+      const authHeader = req.headers.authorization;
       
       // Trigger the generation using the service
-      const scenes = await this.projectService.generateFinalImages(id);
+      const scenes = await this.projectService.generateFinalImages(id, authHeader);
 
       res.status(200).json({
         success: true,
@@ -290,8 +291,9 @@ export class ProjectController {
     try {
       const { sceneId } = req.params;
       const { prompt } = req.body; // Optional new prompt
+      const authHeader = req.headers.authorization;
 
-      const scene = await this.projectService.regenerateScene(sceneId, prompt);
+      const scene = await this.projectService.regenerateScene(sceneId, prompt, authHeader);
 
       res.json({
         success: true,

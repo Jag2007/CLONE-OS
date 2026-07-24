@@ -129,7 +129,8 @@ export default function ScriptStep({ projectId, onBack, onProceedToVideo, regenP
       lastLoadedProjectId.current = null;
       return;
     }
-    if (!selectedProject || lastLoadedProjectId.current === projectId) return;
+    if (!selectedProject) return;
+    if (lastLoadedProjectId.current === projectId && frames.length > 0) return;
     lastLoadedProjectId.current = projectId;
 
     const scenes = selectedProject.scenes || [];
@@ -160,7 +161,7 @@ export default function ScriptStep({ projectId, onBack, onProceedToVideo, regenP
         setPrompt('(Original prompt not saved for this project)');
       }
       setPromptCollapsed(true);
-      if (regenParam && REGEN_TO_PHASE[regenParam]) {
+      if (regenParam && REGEN_TO_PHASE[regenParam] && !allHaveFinalImages) {
         setPhase(REGEN_TO_PHASE[regenParam]);
         if (regenParam === 'script') setPromptCollapsed(false);
       }
@@ -171,7 +172,7 @@ export default function ScriptStep({ projectId, onBack, onProceedToVideo, regenP
       if (selectedProject.scriptText) setPrompt(selectedProject.scriptText);
       else setPrompt('');
     }
-  }, [projectId, selectedProject]);
+  }, [projectId, selectedProject, frames.length, clearFrames, setFrames, regenParam]);
 
   const handleGenerateScript = async () => {
     const userPrompt = prompt.trim();
@@ -211,11 +212,22 @@ export default function ScriptStep({ projectId, onBack, onProceedToVideo, regenP
     try {
       const res = await generateImages({ projectId, force: true });
       const newFrames = parseScenes(res);
+      const finalImageCount = newFrames.filter((frame) => Boolean(frame.finalImageUrl)).length;
+      if (finalImageCount === 0) {
+        throw new Error('No realistic images were returned by the backend.');
+      }
       setFrames(newFrames);
       setPhase(PHASE.IMAGES);
-      toast({ title: 'Final images generated', description: 'Photorealistic images are ready.' });
+      toast({
+        title: 'Final images generated',
+        description: `${finalImageCount} photorealistic image${finalImageCount === 1 ? '' : 's'} ready.`,
+      });
     } catch (error) {
-      toast({ title: 'Image generation failed', description: error?.message || 'Could not generate final images.', variant: 'destructive' });
+      toast({
+        title: 'Image generation failed',
+        description: getApiErrorMessage(error, 'Could not generate final images.'),
+        variant: 'destructive',
+      });
     }
   };
 
@@ -333,11 +345,15 @@ export default function ScriptStep({ projectId, onBack, onProceedToVideo, regenP
     if (phase === PHASE.PROMPT) return { label: 'Generate Script', handler: handleGenerateScript, loading: generatingScript };
     if (phase === PHASE.SCENES) return { label: 'Generate Sketches', handler: handleGenerateSketches, loading: generatingSketches };
     if (phase === PHASE.SKETCHES) return { label: 'Generate Final Images', handler: handleGenerateImages, loading: generatingImages };
+    if (phase === PHASE.IMAGES) return { label: 'Regenerate Final Images', handler: handleGenerateImages, loading: generatingImages };
     return null;
   }, [phase, generatingScript, generatingSketches, generatingImages, projectId, prompt]);
 
   const currentPhaseIdx = phaseIndex(phase);
   const showLoadingSkeleton = projectId && isLoadingProject && lastLoadedProjectId.current !== projectId;
+  const allHaveFinalImages =
+    frames.length > 0 && frames.every((frame) => Boolean(frame.finalImageUrl));
+  const canContinueToVideo = allHaveFinalImages && typeof onProceedToVideo === 'function';
 
   return (
     <div className="cv-step-container">
@@ -423,22 +439,36 @@ export default function ScriptStep({ projectId, onBack, onProceedToVideo, regenP
                   </div>
                 </div>
               )}
-              {primaryAction && (
+              {(primaryAction || canContinueToVideo) && (
                 <div className="script-actions">
-                  <Button className="generate-storyboard-btn" onClick={primaryAction.handler} disabled={isBusy}>
-                    {primaryAction.loading ? (
-                      <><Loader className="w-4 h-4 animate-spin mr-2" />Generating...</>
-                    ) : (
-                      <>{primaryAction.label}<ArrowRight className="w-4 h-4 ml-2" /></>
-                    )}
-                  </Button>
+                  {primaryAction && (
+                    <Button className="generate-storyboard-btn" onClick={primaryAction.handler} disabled={isBusy}>
+                      {primaryAction.loading ? (
+                        <><Loader className="w-4 h-4 animate-spin mr-2" />Generating...</>
+                      ) : (
+                        <>{primaryAction.label}<ArrowRight className="w-4 h-4 ml-2" /></>
+                      )}
+                    </Button>
+                  )}
+                  {canContinueToVideo && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="generate-storyboard-btn"
+                      onClick={onProceedToVideo}
+                      disabled={isBusy}
+                    >
+                      Continue to Generate Video
+                      <ArrowRight className="w-4 h-4 ml-2" />
+                    </Button>
+                  )}
                 </div>
               )}
             </CardContent>
           </Card>
 
           {/* Scene Grid */}
-          {frames.length > 0 && currentPhaseIdx >= phaseIndex(PHASE.SCENES) && (
+          {frames.length > 0 && (currentPhaseIdx >= phaseIndex(PHASE.SCENES) || canContinueToVideo) && (
             <div className="storyboard-area">
               <div className="storyboard-area-header flex flex-wrap items-center gap-2 justify-between">
                 <div className="flex items-center gap-2.5 flex-wrap">

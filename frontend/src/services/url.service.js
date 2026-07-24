@@ -34,7 +34,12 @@ authAxios.interceptors.request.use(
 authAxios.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const status = error.response?.status;
+    const apiError = error.response?.data?.error;
+    const isAuthFailure =
+      status === 401 || (status === 403 && apiError === "Invalid or expired token");
+
+    if (isAuthFailure) {
       useAuthStore.getState().clearAuth();
       window.location.href = "/login";
     }
