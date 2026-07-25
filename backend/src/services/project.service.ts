@@ -16,6 +16,7 @@ import path from "path";
 import os from "os";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import sharp from "sharp";
 
 // Mirrors the multer fileFilter in src/routes/project.routes.ts.
 // Keep these in sync — both the filter and the S3 path builder rely on this set.
@@ -282,14 +283,19 @@ export class ProjectService {
       responseType: "arraybuffer",
       timeout: 120000,
     });
-    const imageBuffer = Buffer.from(imageResponse.data as ArrayBuffer);
-    const contentType = imageResponse.headers["content-type"] || "image/png";
-    const ext = contentType.includes("jpeg") || contentType.includes("jpg")
-      ? "jpg"
-      : contentType.includes("webp")
-        ? "webp"
-        : "png";
-    const filename = `scene.${ext}`;
+    const sourceBuffer = Buffer.from(imageResponse.data as ArrayBuffer);
+    const imageBuffer = await sharp(sourceBuffer)
+      .rotate()
+      .resize({
+        width: 1280,
+        height: 720,
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .jpeg({ quality: 82, mozjpeg: true })
+      .toBuffer();
+    const contentType = "image/jpeg";
+    const filename = "scene.jpg";
 
     if (config.workers.videoImageHostApiKey) {
       const { boundary, body } = this.buildMultipart([
