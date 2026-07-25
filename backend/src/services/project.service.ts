@@ -213,6 +213,10 @@ export class ProjectService {
   }
 
   private getWanTaskUrl(taskId: string): string {
+    if (config.workers.videoTaskBaseUrl) {
+      return `${config.workers.videoTaskBaseUrl}/${taskId}`;
+    }
+
     const generateUrl = new URL(config.workers.videoWorkerApiUrl);
     if (generateUrl.pathname.endsWith("/api/generate")) {
       generateUrl.pathname = generateUrl.pathname.replace(
@@ -235,40 +239,112 @@ export class ProjectService {
     return new URL("/api/upload", generateUrl.origin).toString();
   }
 
+  private buildMultipart(parts: Array<{
+    name: string;
+    value?: string;
+    filename?: string;
+    contentType?: string;
+    data?: Buffer;
+  }>) {
+    const boundary = `dcverse-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const buffers: Buffer[] = [];
+
+    for (const part of parts) {
+      buffers.push(Buffer.from(`--${boundary}\r\n`));
+      if (part.data) {
+        buffers.push(
+          Buffer.from(
+            `Content-Disposition: form-data; name="${part.name}"; filename="${part.filename || "file"}"\r\n` +
+              `Content-Type: ${part.contentType || "application/octet-stream"}\r\n\r\n`,
+          ),
+        );
+        buffers.push(part.data);
+        buffers.push(Buffer.from("\r\n"));
+      } else {
+        buffers.push(
+          Buffer.from(
+            `Content-Disposition: form-data; name="${part.name}"\r\n\r\n${part.value || ""}\r\n`,
+          ),
+        );
+      }
+    }
+
+    buffers.push(Buffer.from(`--${boundary}--\r\n`));
+
+    return {
+      boundary,
+      body: Buffer.concat(buffers),
+    };
+  }
+
   private async uploadImageForWan(imageUrl: string): Promise<string> {
     const imageResponse = await axios.get(imageUrl, {
       responseType: "arraybuffer",
       timeout: 120000,
     });
     const imageBuffer = Buffer.from(imageResponse.data as ArrayBuffer);
-    const boundary = `dcverse-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const contentType = imageResponse.headers["content-type"] || "image/png";
     const ext = contentType.includes("jpeg") || contentType.includes("jpg")
       ? "jpg"
       : contentType.includes("webp")
         ? "webp"
         : "png";
-    const head = Buffer.from(
-      [
-        `--${boundary}`,
-        `Content-Disposition: form-data; name="file"; filename="scene.${ext}"`,
-        `Content-Type: ${contentType}`,
-        "",
-        "",
-      ].join("\r\n"),
-    );
-    const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+    const filename = `scene.${ext}`;
 
-    const uploadResponse = await axios.post(
-      this.getWanUploadUrl(),
-      Buffer.concat([head, imageBuffer, tail]),
-      {
-        headers: {
-          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+    if (config.workers.videoImageHostApiKey) {
+      const { boundary, body } = this.buildMultipart([
+        { name: "key", value: config.workers.videoImageHostApiKey },
+        { name: "format", value: "json" },
+        {
+          name: "source",
+          filename,
+          contentType,
+          data: imageBuffer,
         },
-        timeout: 120000,
+      ]);
+
+      const uploadResponse = await axios.post(
+        config.workers.videoImageHostApiUrl,
+        body,
+        {
+          headers: {
+            "Content-Type": `multipart/form-data; boundary=${boundary}`,
+            "Content-Length": body.length,
+          },
+          timeout: 120000,
+        },
+      );
+      const hostedUrl = this.getValueByPath(
+        uploadResponse.data,
+        config.workers.videoImageHostOutputField,
+      );
+
+      if (typeof hostedUrl === "string" && hostedUrl) {
+        return hostedUrl;
+      }
+
+      throw new AppError(
+        502,
+        `Image host upload failed before WAN video generation: ${JSON.stringify(uploadResponse.data)}`,
+      );
+    }
+
+    const { boundary, body } = this.buildMultipart([
+      {
+        name: "file",
+        filename,
+        contentType,
+        data: imageBuffer,
       },
-    );
+    ]);
+
+    const uploadResponse = await axios.post(this.getWanUploadUrl(), body, {
+      headers: {
+        "Content-Type": `multipart/form-data; boundary=${boundary}`,
+        "Content-Length": body.length,
+      },
+      timeout: 120000,
+    });
 
     if (!uploadResponse.data?.url) {
       throw new AppError(
@@ -334,6 +410,12 @@ export class ProjectService {
         {
           headers: {
             "Content-Type": "application/json",
+            ...(config.workers.videoAsyncHeaderName && config.workers.videoAsyncHeaderValue
+              ? {
+                  [config.workers.videoAsyncHeaderName]:
+                    config.workers.videoAsyncHeaderValue,
+                }
+              : {}),
             ...this.getWorkerAuthHeaders(),
           },
           timeout: 900000,
