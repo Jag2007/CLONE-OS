@@ -363,6 +363,7 @@ export class ProjectService {
       );
 
       const response = await axios.get(this.getWanTaskUrl(taskId), {
+        headers: this.getWorkerAuthHeaders(),
         timeout: 30000,
       });
       const status = String(
