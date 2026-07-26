@@ -504,18 +504,31 @@ export class ProjectService {
       );
 
       const outputPath = path.join(workDir, "final.mp4");
-      await execFileAsync("ffmpeg", [
-        "-y",
-        "-f",
-        "concat",
-        "-safe",
-        "0",
-        "-i",
-        listPath,
-        "-c",
-        "copy",
-        outputPath,
-      ]);
+      try {
+        await execFileAsync("ffmpeg", [
+          "-y",
+          "-f",
+          "concat",
+          "-safe",
+          "0",
+          "-i",
+          listPath,
+          "-c",
+          "copy",
+          outputPath,
+        ]);
+      } catch (execError: any) {
+        if (execError?.code === "ENOENT") {
+          console.error(
+            "ERROR: 'ffmpeg' not found on system PATH. Please install ffmpeg and add it to your PATH."
+          );
+          throw new AppError(
+            500,
+            "Video stitching failed: 'ffmpeg' utility is not installed on the server. Please install ffmpeg and try again.",
+          );
+        }
+        throw execError;
+      }
 
       const finalBuffer = await fs.readFile(outputPath);
       return this.storageService.uploadBuffer(
@@ -996,6 +1009,23 @@ export class ProjectService {
       actorId: actor.id,
     });
 
+    // 5. Kick off background video generation (fire-and-forget)
+    this.runVideoGeneration(projectId, userId, actor, scenesWithFinalImages).catch((error) => {
+      console.error(`Background video generation failed for project ${projectId}:`, error);
+    });
+
+    return {
+      jobId: projectId,
+      message: "Video rendering started. This may take a few minutes.",
+    };
+  }
+
+  private async runVideoGeneration(
+    projectId: string,
+    userId: string,
+    actor: any,
+    scenesWithFinalImages: Scene[],
+  ): Promise<void> {
     try {
       const clipUrls: string[] = [];
       for (const scene of scenesWithFinalImages) {
@@ -1018,18 +1048,13 @@ export class ProjectService {
         storageUrl: videoUrl,
         actorId: actor.id,
       });
-
-      return {
-        jobId: projectId,
-        message: "Video generated successfully.",
-        videoUrl,
-      };
+      console.log(`Video generation successfully completed for project ${projectId}.`);
     } catch (error) {
+      console.error(`Background video generation failed for project ${projectId}:`, error);
       await this.projectRepository.update(projectId, {
         status: ProjectStatus.CASTING,
       });
       await this.userService.addCredits(userId, actor.costPerVideo);
-      throw error;
     }
   }
 
