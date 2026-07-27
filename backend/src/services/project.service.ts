@@ -540,15 +540,53 @@ export class ProjectService {
         ]);
       } catch (execError: any) {
         if (execError?.code === "ENOENT") {
-          console.error(
-            "ERROR: 'ffmpeg' not found on system PATH. Please install ffmpeg and add it to your PATH."
-          );
-          throw new AppError(
-            500,
-            "Video stitching failed: 'ffmpeg' utility is not installed on the server. Please install ffmpeg and try again.",
-          );
+          if (process.platform === "win32") {
+            try {
+              const userHome = os.homedir();
+              const fallbackPath = path.join(
+                userHome,
+                "AppData",
+                "Local",
+                "Microsoft",
+                "WinGet",
+                "Packages",
+                "Gyan.FFmpeg.Essentials_Microsoft.Winget.Source_8wekyb3d8bbwe",
+                "ffmpeg-8.1.1-essentials_build",
+                "bin",
+                "ffmpeg.exe"
+              );
+              await execFileAsync(fallbackPath, [
+                "-y",
+                "-f",
+                "concat",
+                "-safe",
+                "0",
+                "-i",
+                listPath,
+                "-c",
+                "copy",
+                outputPath,
+              ]);
+            } catch (fallbackError: any) {
+              console.error(
+                "ERROR: 'ffmpeg' not found on system PATH and fallback path failed:",
+                fallbackError
+              );
+              throw new AppError(
+                500,
+                "Video stitching failed: 'ffmpeg' utility is not installed or accessible on the server. Please install ffmpeg and try again.",
+              );
+            }
+          } else {
+            // On Linux/Mac, immediately throw when default ffmpeg isn't found
+            throw new AppError(
+              500,
+              "Video stitching failed: 'ffmpeg' utility is not installed on the server. Please install ffmpeg and try again.",
+            );
+          }
+        } else {
+          throw execError;
         }
-        throw execError;
       }
 
       const finalBuffer = await fs.readFile(outputPath);
@@ -1041,6 +1079,65 @@ export class ProjectService {
     };
   }
 
+  private async generateVideoMotionPrompts(scenes: Scene[]): Promise<string[]> {
+    try {
+      const sceneData = scenes.map(s => ({
+        sequenceOrder: s.sequenceOrder,
+        scriptText: s.scriptText,
+        aiPrompt: s.aiPrompt || ""
+      }));
+
+      const completion = await this.openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "system",
+            content: `You are an expert video director and AI video synthesis prompt engineer.
+Your task is to take a sequence of storyboard scenes and generate a concise, motion-focused prompt (20 to 50 words) for each scene. These prompts will be fed into an Image-to-Video model (like HappyHorse / Wan 2.1).
+
+The video model starts with the final static image. It does NOT need to be told static properties (like camera models, lens focal length, lighting setups, aspect ratios, or specific clothing colors) because these are already baked into the image.
+Instead, focus on:
+1. Physical actions and movements of the subject (e.g. "smiling while slowly unwrapping a package", "head bobbing to the music").
+2. Dynamic, cinematic camera movements (e.g. "slow camera push-in", "gentle horizontal camera panning").
+3. Atmospheric changes (e.g. "wind blowing through hair", "raindrops falling").
+
+CRITICAL:
+- Do NOT include meta-instructions (e.g., "generate a smooth video", "no subtitles") or conversational filler.
+- Enforce visual connection/continuity: Ensure the camera movements across consecutive scenes connect logically or flow smoothly (e.g., if scene 1 has a pan right, scene 2 can continue panning right or slowly push in; avoid random, conflicting camera motions).
+
+Return a JSON object with a key "motionPrompts" containing an array of strings in the exact order of the input scenes.
+Structure:
+{
+  "motionPrompts": [
+    "motion prompt for scene 1",
+    "motion prompt for scene 2",
+    ...
+  ]
+}`
+          },
+          {
+            role: "user",
+            content: `Scenes Sequence:\n${JSON.stringify(sceneData, null, 2)}`
+          }
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.7,
+      });
+
+      const content = completion.choices[0]?.message?.content;
+      if (!content) throw new Error("No response content from OpenAI");
+      
+      const parsed = JSON.parse(content);
+      if (Array.isArray(parsed.motionPrompts) && parsed.motionPrompts.length === scenes.length) {
+        return parsed.motionPrompts;
+      }
+      throw new Error("Invalid or mismatched motionPrompts array length returned");
+    } catch (error) {
+      console.error("Failed to generate bulk motion prompts, falling back to scriptText for all scenes:", error);
+      return scenes.map(s => s.scriptText);
+    }
+  }
+
   private async runVideoGeneration(
     projectId: string,
     userId: string,
@@ -1049,17 +1146,13 @@ export class ProjectService {
   ): Promise<void> {
     try {
       const clipUrls: string[] = [];
-      const clipDuration = Number(config.workers.videoDuration) || 5;
-      for (const scene of scenesWithFinalImages) {
-        const prompt = [
-          scene.aiPrompt || scene.scriptText || "",
-          scene.scriptText ? `Action: ${scene.scriptText}` : "",
-          `Generate a smooth ${clipDuration} second 16:9 commercial video clip from this image.`,
-          "Use English-only commercial context. Do not include non-English text or speech.",
-        ]
-          .filter(Boolean)
-          .join("\n")
-          .slice(0, 2000);
+      console.log(`Generating optimized motion prompts for project ${projectId}...`);
+      const motionPrompts = await this.generateVideoMotionPrompts(scenesWithFinalImages);
+
+      for (let i = 0; i < scenesWithFinalImages.length; i++) {
+        const scene = scenesWithFinalImages[i];
+        const prompt = motionPrompts[i] || scene.scriptText;
+        console.log(`Generated Motion Prompt for Scene ${scene.sequenceOrder}: "${prompt}"`);
 
         const clipUrl = await this.createWanVideoClip(scene.finalImageUrl!, prompt);
         clipUrls.push(clipUrl);
