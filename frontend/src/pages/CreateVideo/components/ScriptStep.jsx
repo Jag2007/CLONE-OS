@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
+import { Progress } from 'antd';
 import { Card, CardContent } from '../../../components/ui/card';
 import SceneScriptCard from '../../../components/storyboard/SceneScriptCard';
 import { Button } from '../../../components/ui/button';
@@ -31,6 +32,7 @@ import {
   useRegenerateScene,
   useGetProjectFeedback,
   useUploadSceneSketch,
+  projectApi,
 } from '../../../services/project.service';
 import { downloadSketchFile, downloadSketchesZip } from '../../../utils/storyboardAssets';
 import { useStoryboardStore, useStoryboardFrames } from '../../../store/storyboard.store';
@@ -87,6 +89,15 @@ export default function ScriptStep({ projectId, onBack, onProceedToVideo, regenP
   const [downloadingAllSketches, setDownloadingAllSketches] = useState(false);
   const [regenerateFrame, setRegenerateFrame] = useState(null);
   const [regeneratePrompt, setRegeneratePrompt] = useState('');
+  const [sceneProgress, setSceneProgress] = useState({
+    type: null,
+    activeId: null,
+    completed: 0,
+    total: 0,
+    failed: 0,
+  });
+
+  const isSequentialGenerating = Boolean(sceneProgress.type);
 
   useEffect(() => {
     if (!regenerateFrame) return;
@@ -97,7 +108,8 @@ export default function ScriptStep({ projectId, onBack, onProceedToVideo, regenP
     generatingScript ||
     generatingSketches ||
     generatingImages ||
-    uploadingSceneSketch;
+    uploadingSceneSketch ||
+    isSequentialGenerating;
 
   const showPerSceneSketchUpload =
     phase === PHASE.SKETCHES && frames.length > 0;
@@ -117,6 +129,8 @@ export default function ScriptStep({ projectId, onBack, onProceedToVideo, regenP
       status: scene.status || 'pending',
       sequenceOrder: scene.sequenceOrder ?? idx + 1,
       isLocked: false,
+      generationState: null,
+      generationError: null,
     }));
   };
 
@@ -197,38 +211,177 @@ export default function ScriptStep({ projectId, onBack, onProceedToVideo, regenP
   };
 
   const handleGenerateSketches = async () => {
-    try {
-      const res = await generateSketches(projectId);
-      const newFrames = parseScenes(res);
-      setFrames(newFrames);
+    const api = projectApi();
+    const targetFrames = frames.filter((frame) => !frame.sketchUrl);
+    if (targetFrames.length === 0) {
       setPhase(PHASE.SKETCHES);
-      toast({ title: 'Sketches generated', description: 'Storyboard sketches are ready.' });
-    } catch (error) {
-      toast({ title: 'Sketch generation failed', description: error?.message || 'Could not generate sketches.', variant: 'destructive' });
+      toast({ title: 'Sketches ready', description: 'All scenes already have sketches.' });
+      return;
     }
+
+    setPhase(PHASE.SKETCHES);
+    setSceneProgress({
+      type: 'sketch',
+      activeId: null,
+      completed: 0,
+      total: targetFrames.length,
+      failed: 0,
+    });
+
+    let completed = 0;
+    let failed = 0;
+
+    for (const frame of targetFrames) {
+      setSceneProgress((prev) => ({ ...prev, activeId: frame.id }));
+      updateFrame(frame.id, (f) => ({
+        ...f,
+        status: 'processing',
+        generationState: 'sketch',
+        generationError: null,
+      }));
+
+      try {
+        const res = await api.generateSceneSketch(frame.id);
+        const scene = res?.data?.data ?? res?.data ?? {};
+        completed += 1;
+        updateFrame(frame.id, (f) => ({
+          ...f,
+          sketchUrl: scene.sketchUrl ?? f.sketchUrl,
+          status: scene.status ?? 'sketched',
+          generationState: null,
+          generationError: null,
+        }));
+      } catch (error) {
+        failed += 1;
+        updateFrame(frame.id, (f) => ({
+          ...f,
+          status: f.status === 'processing' ? 'pending' : f.status,
+          generationState: null,
+          generationError: getApiErrorMessage(error, 'Sketch failed.'),
+        }));
+      } finally {
+        setSceneProgress((prev) => ({
+          ...prev,
+          completed,
+          failed,
+        }));
+      }
+    }
+
+    setSceneProgress({
+      type: null,
+      activeId: null,
+      completed: 0,
+      total: 0,
+      failed: 0,
+    });
+
+    if (completed > 0) {
+      toast({
+        title: failed ? 'Sketches partially generated' : 'Sketches generated',
+        description: `${completed} of ${targetFrames.length} scene${targetFrames.length === 1 ? '' : 's'} ready.`,
+        variant: failed ? 'destructive' : undefined,
+      });
+      return;
+    }
+
+    toast({
+      title: 'Sketch generation failed',
+      description: 'No storyboard sketches could be generated.',
+      variant: 'destructive',
+    });
   };
 
   const handleGenerateImages = async () => {
-    try {
-      const res = await generateImages({ projectId, force: true });
-      const newFrames = parseScenes(res);
-      const finalImageCount = newFrames.filter((frame) => Boolean(frame.finalImageUrl)).length;
-      if (finalImageCount === 0) {
-        throw new Error('No realistic images were returned by the backend.');
+    const api = projectApi();
+    const targetFrames = frames.filter((frame) => frame.sketchUrl && !frame.finalImageUrl);
+    const blockedFrames = frames.filter((frame) => !frame.sketchUrl);
+
+    if (targetFrames.length === 0) {
+      if (blockedFrames.length > 0) {
+        toast({
+          title: 'Sketches needed first',
+          description: 'Generate or upload sketches before final images.',
+          variant: 'destructive',
+        });
+        return;
       }
-      setFrames(newFrames);
       setPhase(PHASE.IMAGES);
-      toast({
-        title: 'Final images generated',
-        description: `${finalImageCount} photorealistic image${finalImageCount === 1 ? '' : 's'} ready.`,
-      });
-    } catch (error) {
-      toast({
-        title: 'Image generation failed',
-        description: getApiErrorMessage(error, 'Could not generate final images.'),
-        variant: 'destructive',
-      });
+      toast({ title: 'Final images ready', description: 'All scenes already have final images.' });
+      return;
     }
+
+    setPhase(PHASE.IMAGES);
+    setSceneProgress({
+      type: 'image',
+      activeId: null,
+      completed: 0,
+      total: targetFrames.length,
+      failed: 0,
+    });
+
+    let completed = 0;
+    let failed = 0;
+
+    for (const frame of targetFrames) {
+      setSceneProgress((prev) => ({ ...prev, activeId: frame.id }));
+      updateFrame(frame.id, (f) => ({
+        ...f,
+        status: 'processing',
+        generationState: 'image',
+        generationError: null,
+      }));
+
+      try {
+        const res = await api.generateSceneImage(frame.id);
+        const scene = res?.data?.data ?? res?.data ?? {};
+        completed += 1;
+        updateFrame(frame.id, (f) => ({
+          ...f,
+          finalImageUrl: scene.finalImageUrl ?? f.finalImageUrl,
+          status: scene.status ?? 'lora_processed',
+          generationState: null,
+          generationError: null,
+        }));
+      } catch (error) {
+        failed += 1;
+        updateFrame(frame.id, (f) => ({
+          ...f,
+          status: f.sketchUrl ? 'sketched' : 'pending',
+          generationState: null,
+          generationError: getApiErrorMessage(error, 'Final image failed.'),
+        }));
+      } finally {
+        setSceneProgress((prev) => ({
+          ...prev,
+          completed,
+          failed,
+        }));
+      }
+    }
+
+    setSceneProgress({
+      type: null,
+      activeId: null,
+      completed: 0,
+      total: 0,
+      failed: 0,
+    });
+
+    if (completed > 0) {
+      toast({
+        title: failed ? 'Final images partially generated' : 'Final images generated',
+        description: `${completed} of ${targetFrames.length} photorealistic image${targetFrames.length === 1 ? '' : 's'} ready.`,
+        variant: failed ? 'destructive' : undefined,
+      });
+      return;
+    }
+
+    toast({
+      title: 'Image generation failed',
+      description: 'No final images could be generated.',
+      variant: 'destructive',
+    });
   };
 
   const toggleLock = (id) => updateFrame(id, (f) => ({ ...f, isLocked: !f.isLocked }));
@@ -343,17 +496,20 @@ export default function ScriptStep({ projectId, onBack, onProceedToVideo, regenP
 
   const primaryAction = useMemo(() => {
     if (phase === PHASE.PROMPT) return { label: 'Generate Script', handler: handleGenerateScript, loading: generatingScript };
-    if (phase === PHASE.SCENES) return { label: 'Generate Sketches', handler: handleGenerateSketches, loading: generatingSketches };
-    if (phase === PHASE.SKETCHES) return { label: 'Generate Final Images', handler: handleGenerateImages, loading: generatingImages };
-    if (phase === PHASE.IMAGES) return { label: 'Regenerate Final Images', handler: handleGenerateImages, loading: generatingImages };
+    if (phase === PHASE.SCENES) return { label: 'Generate Sketches', handler: handleGenerateSketches, loading: sceneProgress.type === 'sketch' || generatingSketches };
+    if (phase === PHASE.SKETCHES) return { label: 'Generate Final Images', handler: handleGenerateImages, loading: sceneProgress.type === 'image' || generatingImages };
+    if (phase === PHASE.IMAGES) return { label: 'Regenerate Final Images', handler: handleGenerateImages, loading: sceneProgress.type === 'image' || generatingImages };
     return null;
-  }, [phase, generatingScript, generatingSketches, generatingImages, projectId, prompt]);
+  }, [phase, generatingScript, generatingSketches, generatingImages, projectId, prompt, frames, sceneProgress.type]);
 
   const currentPhaseIdx = phaseIndex(phase);
   const showLoadingSkeleton = projectId && isLoadingProject && lastLoadedProjectId.current !== projectId;
   const allHaveFinalImages =
     frames.length > 0 && frames.every((frame) => Boolean(frame.finalImageUrl));
   const canContinueToVideo = allHaveFinalImages && typeof onProceedToVideo === 'function';
+  const progressPercent = sceneProgress.total
+    ? Math.round((sceneProgress.completed / sceneProgress.total) * 100)
+    : 0;
 
   return (
     <div className="cv-step-container">
@@ -464,6 +620,27 @@ export default function ScriptStep({ projectId, onBack, onProceedToVideo, regenP
                   )}
                 </div>
               )}
+              {sceneProgress.type && (
+                <div className="dc-generation-progress" role="status" aria-live="polite">
+                  <div className="dc-generation-progress-copy">
+                    <span className="dc-generation-progress-label">
+                      {sceneProgress.type === 'sketch'
+                        ? 'Generating storyboard sketches'
+                        : 'Generating photorealistic images'}
+                    </span>
+                    <span className="dc-generation-progress-count">
+                      {sceneProgress.completed}/{sceneProgress.total} complete
+                      {sceneProgress.failed ? `, ${sceneProgress.failed} failed` : ''}
+                    </span>
+                  </div>
+                  <Progress
+                    percent={progressPercent}
+                    showInfo={false}
+                    strokeColor="#ff935c"
+                    trailColor="rgba(148, 163, 184, 0.18)"
+                  />
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -529,6 +706,11 @@ export default function ScriptStep({ projectId, onBack, onProceedToVideo, regenP
                     workflowPhase={phase}
                     generatingSketches={generatingSketches}
                     generatingImages={generatingImages}
+                    generationState={
+                      frame.generationState ||
+                      (sceneProgress.activeId === frame.id ? sceneProgress.type : null)
+                    }
+                    generationError={frame.generationError}
                   />
                 ))}
               </div>

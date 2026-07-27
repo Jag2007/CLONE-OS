@@ -34,9 +34,15 @@ export const projectApi = () => {
   const generateSketches = async (projectId) => 
     authAxios.post(`${prefix}/${projectId}/sketches`);
 
+  const generateSceneSketch = async (sceneId) =>
+    authAxios.post(`${prefix}/scenes/${sceneId}/sketch-ai`);
+
   // Generate final photorealistic images
   const generateImages = async (projectId, force = false) =>
     authAxios.post(`${prefix}/${projectId}/images${force ? '?force=true' : ''}`);
+
+  const generateSceneImage = async (sceneId) =>
+    authAxios.post(`${prefix}/scenes/${sceneId}/image`);
 
   // Regenerate a specific scene
   const regenerateScene = async (sceneId, prompt) =>
@@ -86,7 +92,9 @@ export const projectApi = () => {
     getProjectById,
     generateScript,
     generateSketches,
+    generateSceneSketch,
     generateImages,
+    generateSceneImage,
     regenerateScene,
     renderVideo,
     uploadStoryboard,

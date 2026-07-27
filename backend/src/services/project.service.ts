@@ -80,6 +80,27 @@ export class ProjectService {
     });
   }
 
+  private getRequestedDurationSeconds(prompt: string): number {
+    const normalized = prompt.toLowerCase();
+    const minuteMatch = normalized.match(/(\d+(?:\.\d+)?)\s*(?:minute|minutes|min|mins)\b/);
+    if (minuteMatch) {
+      return Math.max(5, Math.round(Number(minuteMatch[1]) * 60));
+    }
+
+    const secondMatch = normalized.match(/(\d+(?:\.\d+)?)\s*(?:second|seconds|sec|secs|s)\b/);
+    if (secondMatch) {
+      return Math.max(5, Math.round(Number(secondMatch[1])));
+    }
+
+    return 30;
+  }
+
+  private getSceneCountForDuration(durationSeconds: number): number {
+    const sceneDuration = Number(config.workers.videoDuration);
+    const secondsPerScene = Number.isFinite(sceneDuration) && sceneDuration > 0 ? sceneDuration : 5;
+    return Math.max(1, Math.ceil(durationSeconds / secondsPerScene));
+  }
+
   private getWorkerAuthHeaders(): Record<string, string> {
     if (!config.workers.videoApiKey) return {};
     const authScheme = config.workers.videoAuthScheme.trim();
@@ -1028,11 +1049,13 @@ export class ProjectService {
   ): Promise<void> {
     try {
       const clipUrls: string[] = [];
+      const clipDuration = Number(config.workers.videoDuration) || 5;
       for (const scene of scenesWithFinalImages) {
         const prompt = [
           scene.aiPrompt || scene.scriptText || "",
           scene.scriptText ? `Action: ${scene.scriptText}` : "",
-          "Generate a smooth 5 second commercial video clip from this image.",
+          `Generate a smooth ${clipDuration} second 16:9 commercial video clip from this image.`,
+          "Use English-only commercial context. Do not include non-English text or speech.",
         ]
           .filter(Boolean)
           .join("\n")
@@ -1080,6 +1103,9 @@ export class ProjectService {
   async generateScript(projectId: string, prompt: string): Promise<Scene[]> {
     const project = await this.getProjectById(projectId);
     if (!project) throw new AppError(404, "Project not found");
+    const requestedDurationSeconds = this.getRequestedDurationSeconds(prompt);
+    const sceneCount = this.getSceneCountForDuration(requestedDurationSeconds);
+    const secondsPerScene = Number(config.workers.videoDuration) || 5;
 
     // 1. Call OpenAI "Director"
     let completion;
@@ -1089,7 +1115,9 @@ export class ProjectService {
   messages: [
     {
       role: "system",
-      content: `You are a professional video director and expert cinematographer. Break the user's request into a storyboard of 4-6 distinct scenes. 
+      content: `You are a professional video director and expert cinematographer. Break the user's request into exactly ${sceneCount} distinct scenes for a ${requestedDurationSeconds}-second commercial. Each scene should represent about ${secondsPerScene} seconds of screen time.
+      Always write scriptText and aiPrompt in English only. Do not use any other language.
+      Keep the commercial framed for 16:9 video.
       Return a JSON object with a key "scenes" containing an array. 
 
       Required JSON Structure:
@@ -1114,12 +1142,12 @@ export class ProjectService {
       - FOCUS: Focus pulling, Rack focus, Soft vs Hard focus, Shallow DoF, Foreground blur.
       - LIGHTING: Three-point, Chiaroscuro, Rembrandt, Motivated, Practical, Magic hour, Golden hour, Neon, Silhouette.
       - LOOK & GENRE: Magic Realism, Slice of Life, Realism, Neo-noir, Teal & Orange, Bleach bypass, Film grain, Halation.
-      - TECHNICAL: ARRI Alexa 65, RED Monstro, Kodak Vision3 500T, 2.39:1 or 1.85:1 aspect ratios.
+      - TECHNICAL: ARRI Alexa 65, RED Monstro, Kodak Vision3 500T, 16:9 / 1.78:1 aspect ratio.
        Here is your updated system prompt as a continuous paragraph:
 
-You are an expert cinematographer and visual storytelling AI. Your job is to transform any scene description into a richly detailed, cinematic image prompt for AI image generation (DALL·E / Stable Diffusion / Midjourney). You have deep knowledge of professional filmmaking, cinematography, and visual aesthetics. Always use precise film industry terminology in your output prompts. Your knowledge base includes: Shot Types (Extreme Wide Shot, Wide Shot, Full Shot/Long Shot, Medium Wide Shot, Medium Shot, Medium Close-Up, Close-Up, Extreme Close-Up, Over-the-Shoulder, Two-Shot, Insert Shot, Cutaway, POV Shot, Aerial Shot, Bird's Eye View, Worm's Eye View); Mise-en-scène (set design, costume and makeup, props, blocking, hair and wardrobe, spatial relationships, environmental storytelling through visual elements); Camera Angles (Eye-level, Low angle, High angle, Dutch angle/canted, Overhead/top-down, Canted frame, Oblique angle); Camera Movement (Static/locked off, Dolly in/out, Pan left/right, Tilt up/down, Truck left/right, Pedestal up/down, Crane shot, Boom shot, Handheld/shaky/kinetic, Steadicam/smooth/floating, Whip pan, Zolly/dolly zoom/Vertigo effect, Rack focus, Follow shot, Arc shot, Tracking shot); Lens & Optics (Wide angle 14mm/24mm, Standard 35mm/50mm, Telephoto 85mm/135mm/200mm, Anamorphic lens, Tilt-shift, Macro, Prime vs zoom); Depth of Field & Focus (Shallow DoF/bokeh, Deep DoF, Rack focus, Bokeh, Foreground element blur, Hard focus, Soft focus, Focus pulling, Split diopter, Tilt-shift focus, Breathing, Fixed focus); Lighting Setups (Three-point lighting, High-key, Low-key, Chiaroscuro, Rembrandt lighting, Split lighting, Butterfly/Paramount lighting, Motivated light, Practical lights, Natural light, Hard light, Soft light, Backlighting/Rim lighting, Golden hour, Magic hour, Neon/practical color, Silhouette); Color Grading & Film Look (Warm grade, Cool grade, Teal and orange, Desaturated, High contrast, Low contrast, Film grain, Halation, Vignette, Cross-processed, Black and white, Bleach bypass, LUT applied); Film Stocks & Camera References (Kodak Vision3 500T, Fuji Eterna, Kodak Portra 400, ARRI Alexa 65, RED Monstro, Sony Venice, Panavision, 1970s New Hollywood, 1980s neon, classic Hollywood golden age); Aspect Ratios (1.33:1/4:3, 1.78:1/16:9, 1.85:1, 2.39:1 anamorphic, 2.76:1 Ultra Panavision); Composition Rules including Gestalt Laws (Rule of thirds, Golden ratio/Fibonacci spiral, Symmetry, Leading lines, Foreground framing, Negative space, Headroom, Looking room/Nose room, Layered depth, Environmental storytelling, Proximity, Similarity, Continuity, Closure, Figure-Ground, Common Fate); and Mood & Genre References (Film noir, Neo-noir, Epic/Blockbuster, Indie film, Horror, Sci-fi, Western, Romance, Documentary, Magic realism, Realism, Slice of life). When given a scene description, output a prompt in this structure: [SHOT TYPE], [MISE-EN-SCÈNE], [SUBJECT & ACTION], [ENVIRONMENT & SETTING], [LIGHTING SETUP], [LENS & DEPTH OF FIELD], [CAMERA ANGLE & MOVEMENT], [FOCUS POINT & PULLING], [COLOR GRADE & FILM LOOK], [MOOD & ATMOSPHERE], [ASPECT RATIO], [TECHNICAL REFERENCE]. Always include at least one term from each category, match the mood of the scene precisely, be specific with terminology like "Rembrandt lighting" instead of "dramatic lighting," prefer cinematic aspect ratios 1.85:1 or 2.39:1 unless told otherwise, and never output generic descriptions—every prompt must feel like a director's shot list entry.`
+You are an expert cinematographer and visual storytelling AI. Your job is to transform any scene description into a richly detailed, cinematic image prompt for AI image generation (DALL·E / Stable Diffusion / Midjourney). You have deep knowledge of professional filmmaking, cinematography, and visual aesthetics. Always use precise film industry terminology in your output prompts. Your knowledge base includes: Shot Types (Extreme Wide Shot, Wide Shot, Full Shot/Long Shot, Medium Wide Shot, Medium Shot, Medium Close-Up, Close-Up, Extreme Close-Up, Over-the-Shoulder, Two-Shot, Insert Shot, Cutaway, POV Shot, Aerial Shot, Bird's Eye View, Worm's Eye View); Mise-en-scène (set design, costume and makeup, props, blocking, hair and wardrobe, spatial relationships, environmental storytelling through visual elements); Camera Angles (Eye-level, Low angle, High angle, Dutch angle/canted, Overhead/top-down, Canted frame, Oblique angle); Camera Movement (Static/locked off, Dolly in/out, Pan left/right, Tilt up/down, Truck left/right, Pedestal up/down, Crane shot, Boom shot, Handheld/shaky/kinetic, Steadicam/smooth/floating, Whip pan, Zolly/dolly zoom/Vertigo effect, Rack focus, Follow shot, Arc shot, Tracking shot); Lens & Optics (Wide angle 14mm/24mm, Standard 35mm/50mm, Telephoto 85mm/135mm/200mm, Anamorphic lens, Tilt-shift, Macro, Prime vs zoom); Depth of Field & Focus (Shallow DoF/bokeh, Deep DoF, Rack focus, Bokeh, Foreground element blur, Hard focus, Soft focus, Focus pulling, Split diopter, Tilt-shift focus, Breathing, Fixed focus); Lighting Setups (Three-point lighting, High-key, Low-key, Chiaroscuro, Rembrandt lighting, Split lighting, Butterfly/Paramount lighting, Motivated light, Practical lights, Natural light, Hard light, Soft light, Backlighting/Rim lighting, Golden hour, Magic hour, Neon/practical color, Silhouette); Color Grading & Film Look (Warm grade, Cool grade, Teal and orange, Desaturated, High contrast, Low contrast, Film grain, Halation, Vignette, Cross-processed, Black and white, Bleach bypass, LUT applied); Film Stocks & Camera References (Kodak Vision3 500T, Fuji Eterna, Kodak Portra 400, ARRI Alexa 65, RED Monstro, Sony Venice, Panavision, 1970s New Hollywood, 1980s neon, classic Hollywood golden age); Aspect Ratios (1.78:1/16:9); Composition Rules including Gestalt Laws (Rule of thirds, Golden ratio/Fibonacci spiral, Symmetry, Leading lines, Foreground framing, Negative space, Headroom, Looking room/Nose room, Layered depth, Environmental storytelling, Proximity, Similarity, Continuity, Closure, Figure-Ground, Common Fate); and Mood & Genre References (Film noir, Neo-noir, Epic/Blockbuster, Indie film, Horror, Sci-fi, Western, Romance, Documentary, Magic realism, Realism, Slice of life). When given a scene description, output a prompt in this structure: [SHOT TYPE], [MISE-EN-SCÈNE], [SUBJECT & ACTION], [ENVIRONMENT & SETTING], [LIGHTING SETUP], [LENS & DEPTH OF FIELD], [CAMERA ANGLE & MOVEMENT], [FOCUS POINT & PULLING], [COLOR GRADE & FILM LOOK], [MOOD & ATMOSPHERE], [ASPECT RATIO], [TECHNICAL REFERENCE]. Always include at least one term from each category, match the mood of the scene precisely, be specific with terminology like "Rembrandt lighting" instead of "dramatic lighting," use 16:9 / 1.78:1 aspect ratio, and never output generic descriptions—every prompt must feel like a director's shot list entry.`
     },
-    { role: "user", content: `Create a script for: ${prompt}` },
+    { role: "user", content: `Create exactly ${sceneCount} English storyboard scenes for this ${requestedDurationSeconds}-second 16:9 commercial: ${prompt}` },
   ],
   response_format: { type: "json_object" },
       });
@@ -1167,16 +1195,25 @@ You are an expert cinematographer and visual storytelling AI. Your job is to tra
       throw new AppError(500, "AI returned invalid storyboard structure");
     }
 
+    const normalizedScenesData = scenesData.slice(0, sceneCount);
+    if (normalizedScenesData.length !== sceneCount) {
+      throw new AppError(
+        500,
+        `AI returned ${normalizedScenesData.length} scenes, expected ${sceneCount}. Please regenerate the script.`,
+      );
+    }
+
     // 3. Save Scenes to DB
     // Use this.sceneRepository instead of creating a new variable if properly initialized in constructor
     await this.sceneRepository.delete({ project: { id: projectId } });
 
     const savedScenes: Scene[] = [];
 
-    for (const s of scenesData) {
+    for (let i = 0; i < normalizedScenesData.length; i++) {
+      const s = normalizedScenesData[i];
       const scene = this.sceneRepository.create({
         projectId: projectId,
-        sequenceOrder: s.sequenceOrder,
+        sequenceOrder: i + 1,
         scriptText: s.scriptText,
         aiPrompt: s.aiPrompt,
         status: SceneStatus.PENDING,
@@ -1207,40 +1244,43 @@ You are an expert cinematographer and visual storytelling AI. Your job is to tra
       throw new AppError(404, "No scenes found. Generate script first.");
     }
 
-    // We process scenes in parallel to speed it up
-    const promises = scenes.map(async (scene) => {
-      // Skip if already sketched to save money
-      if (scene.sketchUrl) return scene;
-
-      try {
-        const imageBuffer = await this.generateOpenAIImageBuffer(
-          `Storyboard sketch, black and white graphite pencil style, clean lines, professional cinematic framing: ${scene.aiPrompt || scene.scriptText}`,
-        );
-
-        // Timestamped path so each generation is stored separately in S3.
-        const timestamp = Date.now();
-        const s3Path = `projects/${projectId}/sketches/${scene.id}/ai-${timestamp}.png`;
-
-        const permanentUrl = await this.storageService.uploadBuffer(
-          imageBuffer,
-          s3Path,
-          "image/png",
-        );
-
-        // Record in history and set as the active sketch
-        await this.recordSketch(scene, permanentUrl, SketchSource.AI);
-      } catch (error) {
-        console.error(
-          `Failed to generate sketch for scene ${scene.id}:`,
-          error,
-        );
-        // We continue even if one fails
-      }
-      return scene;
-    });
-
-    const updatedScenes = await Promise.all(promises);
+    const updatedScenes: Scene[] = [];
+    for (const scene of scenes) {
+      updatedScenes.push(await this.generateSceneSketch(scene.id));
+    }
     return updatedScenes;
+  }
+
+  async generateSceneSketch(sceneId: string): Promise<Scene> {
+    const scene = await this.sceneRepository.findOne({
+      where: { id: sceneId },
+    });
+    if (!scene) throw new AppError(404, "Scene not found");
+    if (!scene.projectId) {
+      throw new AppError(400, "Scene is not attached to a project.");
+    }
+    if (scene.sketchUrl) return scene;
+
+    try {
+      const imageBuffer = await this.generateOpenAIImageBuffer(
+        `Storyboard sketch, black and white graphite pencil style, clean lines, professional 16:9 cinematic framing, English commercial storyboard context only: ${scene.aiPrompt || scene.scriptText}`,
+      );
+
+      const timestamp = Date.now();
+      const s3Path = `projects/${scene.projectId}/sketches/${scene.id}/ai-${timestamp}.png`;
+      const permanentUrl = await this.storageService.uploadBuffer(
+        imageBuffer,
+        s3Path,
+        "image/png",
+      );
+
+      await this.recordSketch(scene, permanentUrl, SketchSource.AI);
+    } catch (error) {
+      console.error(`Failed to generate sketch for scene ${scene.id}:`, error);
+      throw error;
+    }
+
+    return scene;
   }
 
   /**
@@ -1481,6 +1521,31 @@ You are an expert cinematographer and visual storytelling AI. Your job is to tra
     await this.projectRepository.save(project);
 
     return updatedScenes;
+  }
+
+  async generateSceneFinalImage(
+    sceneId: string,
+    authHeader?: string,
+  ): Promise<Scene> {
+    const scene = await this.sceneRepository.findOne({
+      where: { id: sceneId },
+      relations: ["project"],
+    });
+
+    if (!scene) throw new AppError(404, "Scene not found");
+    if (scene.finalImageUrl) return scene;
+
+    const project = scene.project;
+    if (!project?.actorId) {
+      throw new AppError(400, "Project has no actor assigned");
+    }
+
+    const actor = await this.actorService.getActorById(project.actorId);
+    if (!actor) throw new AppError(404, "Actor not found");
+
+    const updated = await this.processSceneImage(scene, actor, project.id, authHeader);
+    if (!updated) throw new AppError(500, "Image generation failed");
+    return updated;
   }
 
   // 2. NEW: Regenerate Single Scene

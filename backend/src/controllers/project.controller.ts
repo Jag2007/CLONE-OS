@@ -163,6 +163,25 @@ export class ProjectController {
       next(error);
     }
   };
+
+  generateSceneSketch = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const { sceneId } = req.params;
+      const scene = await this.projectService.generateSceneSketch(sceneId);
+
+      res.status(200).json({
+        success: true,
+        data: scene,
+        message: 'Scene sketch generated successfully',
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
   uploadStoryboard = async (
     req: Request,
     res: Response,
@@ -277,6 +296,27 @@ export class ProjectController {
         success: true,
         data: scenes,
         message: 'Photorealistic images generated successfully',
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  generateSceneImage = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const { sceneId } = req.params;
+      const authHeader = req.headers.authorization;
+
+      const scene = await this.projectService.generateSceneFinalImage(sceneId, authHeader);
+
+      res.status(200).json({
+        success: true,
+        data: scene,
+        message: 'Scene image generated successfully',
       });
     } catch (error) {
       next(error);

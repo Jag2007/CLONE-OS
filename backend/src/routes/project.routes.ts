@@ -45,6 +45,9 @@ router.post('/:id/script', projectController.generateScript);
 // POST /projects/:id/sketches - Generate images for the scenes
 router.post('/:id/sketches', projectController.generateSketches);
 
+// POST /projects/scenes/:sceneId/sketch-ai - Generate an AI sketch for one scene
+router.post('/scenes/:sceneId/sketch-ai', projectController.generateSceneSketch);
+
 // POST /projects/:id/storyboard - Upload user-provided storyboard sketches
 // multipart/form-data, field name: "sketches" (one file per scene, in order)
 router.post(
@@ -72,6 +75,9 @@ router.get(
 
 // POST /projects/:id/images - Generate final photorealistic images
 router.post('/:id/images', projectController.generateImages);
+
+// POST /projects/scenes/:sceneId/image - Generate final photorealistic image for one scene
+router.post('/scenes/:sceneId/image', projectController.generateSceneImage);
 
 // POST /projects/scenes/:sceneId/regenerate
 router.post('/scenes/:sceneId/regenerate', projectController.regenerateScene);

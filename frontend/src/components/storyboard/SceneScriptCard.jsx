@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { Spin } from 'antd';
 import { Card, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
 import { ImageIcon, Eye, RotateCw, Lock, Unlock, Loader, CheckCircle2, AlertCircle, Download, Upload } from 'lucide-react';
@@ -66,19 +67,34 @@ export default function SceneScriptCard({
   workflowPhase,
   generatingSketches = false,
   generatingImages = false,
+  generationState = null,
+  generationError = null,
 }) {
   const sketchFileInputRef = useRef(null);
   const [sketchDownloadLoading, setSketchDownloadLoading] = useState(false);
   const [sketchUploadLoading, setSketchUploadLoading] = useState(false);
   const hasVisual = Boolean(frame.finalImageUrl || frame.sketchUrl);
-  const hint =
-    !hasVisual && workflowPhase
-      ? visualHintText(workflowPhase, generatingSketches, generatingImages)
-      : null;
+  let hint = null;
+  if (generationState) {
+    hint =
+      generationState === 'sketch'
+        ? 'Generating sketch for this scene...'
+        : 'Generating final image for this scene...';
+  } else if (generationError) {
+    hint = generationError;
+  } else if (!hasVisual && workflowPhase) {
+    hint = visualHintText(workflowPhase, generatingSketches, generatingImages);
+  }
 
   return (
-    <Card className="storyboard-card group overflow-hidden border-l-[3px] border-l-[var(--accent)] border-t-[var(--border-default)]">
+    <Card className={`storyboard-card group overflow-hidden border-l-[3px] border-l-[var(--accent)] border-t-[var(--border-default)] ${generationState ? 'is-generating' : ''}`}>
       <CardContent className="storyboard-content">
+        {generationState && (
+          <div className="scene-card-loader">
+            <Spin size="small" />
+            <span>{generationState === 'sketch' ? 'Sketching' : 'Rendering'}</span>
+          </div>
+        )}
         {hasVisual && (
           <div className="frame-preview">
             {frame.finalImageUrl ? (
@@ -107,7 +123,7 @@ export default function SceneScriptCard({
               {frame.scriptText}
             </p>
             {hint && (
-              <p className="mt-2 m-0 text-[11px] font-medium text-[var(--accent)]">{hint}</p>
+              <p className={`mt-2 m-0 text-[11px] font-medium ${generationError ? 'text-[var(--danger)]' : 'text-[var(--accent)]'}`}>{hint}</p>
             )}
           </div>
         </div>

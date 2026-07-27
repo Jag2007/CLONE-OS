@@ -1315,6 +1315,38 @@ html {
   margin-top: 1.25rem;
 }
 
+.dc-generation-progress {
+  max-width: 520px;
+  margin: 1rem auto 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 12%, transparent), transparent),
+    var(--bg-primary);
+}
+
+.dc-generation-progress-copy {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.55rem;
+  font-family: "Inter", system-ui, sans-serif;
+}
+
+.dc-generation-progress-label {
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  font-weight: 650;
+}
+
+.dc-generation-progress-count {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
 .generate-storyboard-btn {
   background: var(--accent) !important;
   color: white !important;
@@ -1350,11 +1382,42 @@ html {
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
   transition: all 0.2s ease;
+  position: relative;
 }
 
 .storyboard-card:hover {
   border-color: var(--border-hover);
   box-shadow: var(--shadow-md);
+}
+
+.storyboard-card.is-generating {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--border-default));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent),
+    0 18px 40px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.scene-card-loader {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-primary) 88%, transparent);
+  color: var(--accent);
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  backdrop-filter: blur(10px);
+}
+
+.scene-card-loader .ant-spin-dot-item {
+  background-color: var(--accent);
 }
 
 .storyboard-content {
