@@ -80,6 +80,24 @@ export class ProjectService {
     });
   }
 
+  private async moderateText(text: unknown): Promise<void> {
+    if (typeof text !== "string" || !text.trim()) {
+      return;
+    }
+    try {
+      const response = await this.openai.moderations.create({
+        input: text,
+      });
+      const result = response.results[0];
+      if (result?.flagged) {
+        throw new AppError(400, "Input prompt violates content safety policies.");
+      }
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      console.warn("OpenAI Text Moderation API request failed, failing open:", error);
+    }
+  }
+
   private getRequestedDurationSeconds(prompt: string): number {
     const normalized = prompt.toLowerCase();
     const minuteMatch = normalized.match(/(\d+(?:\.\d+)?)\s*(?:minute|minutes|min|mins)\b/);
@@ -1196,6 +1214,10 @@ Structure:
   async generateScript(projectId: string, prompt: string): Promise<Scene[]> {
     const project = await this.getProjectById(projectId);
     if (!project) throw new AppError(404, "Project not found");
+
+    // Check content safety first
+    await this.moderateText(prompt);
+
     const requestedDurationSeconds = this.getRequestedDurationSeconds(prompt);
     const sceneCount = this.getSceneCountForDuration(requestedDurationSeconds);
     const secondsPerScene = Number(config.workers.videoDuration) || 5;
@@ -1656,6 +1678,9 @@ You are an expert cinematographer and visual storytelling AI. Your job is to tra
 
     // Update prompt if provided
     if (newPrompt) {
+      // Check content safety first
+      await this.moderateText(newPrompt);
+
       scene.aiPrompt = newPrompt;
       await this.sceneRepository.save(scene); // Save new prompt to DB
     }
