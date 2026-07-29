@@ -7,6 +7,7 @@ export const redisConnection = new IORedis({
   port: config.redis.port,
   password: config.redis.password || undefined,
   maxRetriesPerRequest: null,
+  tls: config.redis.host !== 'localhost' && config.redis.host !== '127.0.0.1' ? {} : undefined,
 });
 
 export const videoGenerationQueue = new Queue('video-generation-queue', {
