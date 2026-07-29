@@ -8,12 +8,20 @@ const actors = [
   { name: 'Emma', costPerVideo: 40, avatarUrl: null },
   { name: 'John', costPerVideo: 35, avatarUrl: null },
   { name: 'Sophia', costPerVideo: 55, avatarUrl: null },
-  { name: 'Marcus', costPerVideo: 30, avatarUrl: null },
+  { name: 'Tarina', costPerVideo: 30, avatarUrl: null },
 ];
 
 async function seedActors() {
   await AppDataSource.initialize();
   const actorRepository = AppDataSource.getRepository(Actor);
+
+  // Rename existing 'Marcus' to 'Tarina' if present
+  const marcus = await actorRepository.findOne({ where: { name: 'Marcus' } });
+  if (marcus) {
+    marcus.name = 'Tarina';
+    await actorRepository.save(marcus);
+    console.log("Renamed existing Marcus actor in DB to Tarina");
+  }
 
   for (const actor of actors) {
     const existing = await actorRepository.findOne({

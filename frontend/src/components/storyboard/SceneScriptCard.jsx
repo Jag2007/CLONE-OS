@@ -20,18 +20,21 @@ function statusPillClasses(status) {
 
 function StatusPill({ status }) {
   const s = String(status || '').toLowerCase();
+  const isProcessed = s === 'completed' || s === 'lora_processed';
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${statusPillClasses(status)}`}
     >
-      {s === 'completed' || s === 'lora_processed' ? (
+      {isProcessed ? (
         <CheckCircle2 className="h-3 w-3 shrink-0" />
       ) : s === 'processing' || s === 'sketched' ? (
         <Loader className="h-3 w-3 shrink-0 animate-spin" />
       ) : s === 'pending' ? (
         <AlertCircle className="h-3 w-3 shrink-0" />
       ) : null}
-      <span className="max-w-[7rem] truncate capitalize">{status || '—'}</span>
+      {!isProcessed && (
+        <span className="max-w-[7rem] truncate capitalize">{status || '—'}</span>
+      )}
     </span>
   );
 }

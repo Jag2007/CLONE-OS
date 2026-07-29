@@ -8,6 +8,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "seed:actors": "ts-node src/seed/actors.ts",
+    "seed:users": "ts-node src/seed/users.ts",
     "typeorm": "typeorm-ts-node-commonjs"
   },
   "dependencies": {

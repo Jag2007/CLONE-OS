@@ -219,7 +219,13 @@ export default function VideoDetailModal({
                             <span
                               className={`vv-modal-scene-status ${sceneStatusColor}`}
                             >
-                              {scene.status.replace("_", " ").toLowerCase()}
+                              {scene.status === 'completed' ||
+                              scene.status === 'lora_processed' ||
+                              scene.status === 'LORA_PROCESSED' ? (
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                              ) : (
+                                scene.status.replace("_", " ").toLowerCase()
+                              )}
                             </span>
                           )}
                         </div>

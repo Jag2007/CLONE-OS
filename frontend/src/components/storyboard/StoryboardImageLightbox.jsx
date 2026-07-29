@@ -175,7 +175,9 @@ export default function StoryboardImageLightbox({
             </DialogDescription>
             <Badge
               className={`px-2 py-0.5 rounded-md font-medium flex items-center gap-1.5 text-[11px] ${
-                frame.status === 'completed' || frame.status === 'LORA_PROCESSED'
+                frame.status === 'completed' ||
+                frame.status === 'LORA_PROCESSED' ||
+                String(frame.status || '').toLowerCase() === 'lora_processed'
                   ? 'bg-emerald-600/80 text-white'
                   : frame.status === 'processing' || frame.status === 'SKETCHED'
                     ? 'bg-blue-600/80 text-white'
@@ -184,18 +186,22 @@ export default function StoryboardImageLightbox({
                       : 'bg-secondary/90 text-secondary-foreground'
               }`}
             >
-              {(frame.status === 'completed' ||
-                frame.status === 'LORA_PROCESSED') && (
+              {frame.status === 'completed' ||
+              frame.status === 'LORA_PROCESSED' ||
+              String(frame.status || '').toLowerCase() === 'lora_processed' ? (
                 <CheckCircle2 className="w-3 h-3" />
+              ) : (
+                <>
+                  {(frame.status === 'processing' ||
+                    frame.status === 'SKETCHED') && (
+                    <Loader className="w-3 h-3 animate-spin" />
+                  )}
+                  {(frame.status === 'pending' || frame.status === 'PENDING') && (
+                    <AlertCircle className="w-3 h-3" />
+                  )}
+                  <span className="capitalize">{frame.status}</span>
+                </>
               )}
-              {(frame.status === 'processing' ||
-                frame.status === 'SKETCHED') && (
-                <Loader className="w-3 h-3 animate-spin" />
-              )}
-              {(frame.status === 'pending' || frame.status === 'PENDING') && (
-                <AlertCircle className="w-3 h-3" />
-              )}
-              <span className="capitalize">{frame.status}</span>
             </Badge>
           </div>
         </div>

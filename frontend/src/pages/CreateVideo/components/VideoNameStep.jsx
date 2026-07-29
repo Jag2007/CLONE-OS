@@ -18,6 +18,15 @@ export default function VideoNameStep({ onCreated }) {
   const { mutateAsync: createProject, isPending: creating } =
     useCreateProject();
 
+  React.useEffect(() => {
+    if (actors && actors.length > 0 && !selectedActorId) {
+      const tarina = actors.find((a) => a.name.toLowerCase() === "tarina");
+      if (tarina) {
+        setSelectedActorId(tarina.id);
+      }
+    }
+  }, [actors, selectedActorId]);
+
   const handleNext = async () => {
     if (!videoName.trim()) {
       toast({
@@ -101,12 +110,15 @@ export default function VideoNameStep({ onCreated }) {
                 const imgSrc =
                   actor.avatarUrl || actor.imageUrl || actor.avatar_url || "";
                 const isSelected = selectedActorId === actor.id;
+                const isTarina = actor.name.toLowerCase() === "tarina";
+                const isDisabled = !isTarina;
                 return (
                   <button
                     key={actor.id}
                     type="button"
+                    disabled={isDisabled}
                     onClick={() => setSelectedActorId(actor.id)}
-                    className={`cv-actor-card${isSelected ? " selected" : ""}`}
+                    className={`cv-actor-card${isSelected ? " selected" : ""}${isDisabled ? " disabled" : ""}`}
                   >
                     <div className="cv-actor-img-wrap">
                       {imgSrc ? (

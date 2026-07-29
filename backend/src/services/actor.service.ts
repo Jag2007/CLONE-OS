@@ -9,7 +9,7 @@ const TRIGGER_WORDS: Record<string, string> = {
   emma: 'e4ma',
   john: 'j4hn',
   sophia: 's0phia',
-  marcus: 'm4rcus',
+  tarina: 'm4rcus',
 };
 
 function toActorInfo(actor: Actor): ActorInfo {

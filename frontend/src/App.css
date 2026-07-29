@@ -2492,6 +2492,13 @@ button:active:not(:disabled) {
   box-shadow: 0 0 0 3px var(--accent-muted);
 }
 
+.cv-actor-card.disabled {
+  opacity: 0.5;
+  filter: grayscale(100%);
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .cv-actor-img-wrap {
   width: 100%;
   aspect-ratio: 1;
