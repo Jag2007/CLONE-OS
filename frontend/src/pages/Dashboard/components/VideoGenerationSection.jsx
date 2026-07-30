@@ -57,9 +57,10 @@ export default function VideoGenerationSection({ sectionRef, selectedProjectId, 
           stopPolling();
           refetch();
           toast({ title: 'Video ready', description: 'Your video has been generated.' });
-        } else if (p?.status === 'draft') {
+        } else if (p?.status === 'casting' || p?.status === 'draft') {
           setIsGenerating(false);
           stopPolling();
+          refetch();
           toast({ title: 'Rendering failed', description: 'Something went wrong. Please try again.', variant: 'destructive' });
         }
       } catch {
