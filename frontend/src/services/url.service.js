@@ -24,6 +24,10 @@ function fixUrls(data) {
     if (url.startsWith("/uploads/")) {
       return `${backendDomain}${url}`;
     }
+    // If it's a relative path starting with uploads/
+    if (url.startsWith("uploads/")) {
+      return `${backendDomain}/${url}`;
+    }
     return url;
   };
 
