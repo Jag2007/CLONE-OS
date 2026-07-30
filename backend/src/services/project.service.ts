@@ -797,35 +797,108 @@ export class ProjectService {
     }
   }
 
-  private async generateOpenAIImageBuffer(prompt: string): Promise<Buffer> {
-    const response = await this.openai.images.generate({
-      model: config.openai.imageModel,
-      prompt,
-      n: 1,
-      size: "1024x1024",
-    });
-
-    const image = response.data?.[0];
-    if (!image) {
-      throw new Error("No image data returned from OpenAI");
-    }
-
-    if ("b64_json" in image && image.b64_json) {
-      return Buffer.from(image.b64_json, "base64");
-    }
-
-    if ("url" in image && image.url) {
-      const imageResponse = await axios.get(image.url, {
-        responseType: "arraybuffer",
+  private async generateOpenAIImageBuffer(prompt: string, model: string = config.openai.imageModel): Promise<Buffer> {
+    try {
+      const response = await this.openai.images.generate({
+        model: model,
+        prompt,
+        n: 1,
+        size: "1024x1024",
       });
-      return Buffer.from(imageResponse.data);
-    }
 
-    throw new Error("OpenAI image response did not include image bytes or URL");
+      const image = response.data?.[0];
+      if (!image) {
+        throw new Error("No image data returned from OpenAI");
+      }
+
+      if ("b64_json" in image && image.b64_json) {
+        return Buffer.from(image.b64_json, "base64");
+      }
+
+      if ("url" in image && image.url) {
+        const imageResponse = await axios.get(image.url, {
+          responseType: "arraybuffer",
+        });
+        return Buffer.from(imageResponse.data);
+      }
+
+      throw new Error("OpenAI image response did not include image bytes or URL");
+    } catch (error: any) {
+      // Check if it is a safety/content policy violation
+      const errorMessage = String(error?.message || "");
+      const isSafetyViolation =
+        errorMessage.toLowerCase().includes("safety") ||
+        errorMessage.toLowerCase().includes("policy") ||
+        errorMessage.toLowerCase().includes("content_policy_violation") ||
+        error?.code === "content_policy_violation" ||
+        (error?.status === 400 && errorMessage.toLowerCase().includes("inappropriate"));
+
+      if (isSafetyViolation) {
+        console.warn(`Safety policy violation caught for prompt: "${prompt}". Attempting to rewrite with GPT-4o...`);
+        try {
+          const rewriteCompletion = await this.openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: [
+              {
+                role: "system",
+                content: "You are a prompt safety compliance helper. The user's prompt for DALL-E image generation was rejected due to content safety policy filters. Your task is to rewrite the prompt so that it is 100% compliant with safety guidelines while preserving the core visual story and setting. Avoid terms like 'bath', 'shower', 'bathing', 'naked', 'baby' or any references to children without clothing, etc. Instead, describe them as fully clothed, wearing swimsuits, or playing in a safe, non-sensitive setting (e.g. playing with soap bubbles in a playroom, or wearing a cozy cute outfit next to bubbles). Output ONLY the rewritten, safe prompt."
+              },
+              {
+                role: "user",
+                content: `Please rewrite this rejected prompt: "${prompt}"`
+              }
+            ],
+            temperature: 0.7,
+          });
+
+          const rewrittenPrompt = rewriteCompletion.choices[0]?.message?.content?.trim();
+          if (rewrittenPrompt) {
+            console.log(`Retrying image generation with rewritten prompt: "${rewrittenPrompt}"`);
+            return await this.generateOpenAIImageBuffer(rewrittenPrompt, model);
+          }
+        } catch (rewriteError) {
+          console.error("Failed to rewrite prompt with GPT-4o:", rewriteError);
+        }
+      }
+
+      // If it's not a safety violation or if safety rewrite failed, try fallback to dall-e-3 if we used a different model
+      if (model !== "dall-e-3") {
+        console.warn(`[WARN] OpenAI image generation failed using model ${model}: ${error.message}. Retrying with dall-e-3...`);
+        return this.generateOpenAIImageBuffer(prompt, "dall-e-3");
+      }
+
+      throw error;
+    }
   }
 
   private async imageUrlToBase64(url: string): Promise<string> {
-    const response = await axios.get(url, {
+    // If the URL is a local upload path, read it directly from the local filesystem to avoid self-referencing HTTP requests.
+    if (url.includes("/uploads/")) {
+      try {
+        const parts = url.split("/uploads/");
+        const relativePath = parts[parts.length - 1];
+        // Clean relative path to avoid path traversal
+        const safeRelativePath = relativePath.replace(/\.\.+/g, "").replace(/^\/+/, "");
+        const localPath = path.resolve(process.cwd(), "uploads", safeRelativePath);
+        console.log(`Reading local sketch file directly from: ${localPath}`);
+        const buffer = await fs.readFile(localPath);
+        return buffer.toString("base64");
+      } catch (err) {
+        console.warn(`Failed to read local file directly, falling back to HTTP download:`, err);
+      }
+    }
+
+    let targetUrl = url;
+    if (config.storage.driver === 'local') {
+      const uploadKeyword = "/uploads/";
+      if (url.includes(uploadKeyword)) {
+        const parts = url.split(uploadKeyword);
+        const relativePath = parts[parts.length - 1];
+        targetUrl = `${config.storage.backendPublicUrl}/uploads/${relativePath}`;
+      }
+    }
+
+    const response = await axios.get(targetUrl, {
       responseType: "arraybuffer",
       timeout: 120000,
     });

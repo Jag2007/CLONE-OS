@@ -148,12 +148,29 @@ export default function UploadScriptSection({
       return;
     }
 
-    // Avoid re-loading the same project repeatedly
-    if (!selectedProject || lastLoadedProjectId.current === selectedProjectId)
+    if (!selectedProject) return;
+
+    // Check if the loaded frames differ from the server project scenes to support refresh/redo updates
+    const scenes = selectedProject.scenes || [];
+    const isDifferent =
+      frames.length !== scenes.length ||
+      scenes.some((scene) => {
+        const frame = frames.find((f) => f.id === scene.id);
+        if (!frame) return true;
+        return (
+          frame.sketchUrl !== (scene.sketchUrl || null) ||
+          frame.finalImageUrl !== (scene.finalImageUrl || null) ||
+          frame.status !== (scene.status || "pending") ||
+          frame.aiPrompt !== (scene.aiPrompt || null)
+        );
+      });
+
+    if (lastLoadedProjectId.current === selectedProjectId && frames.length > 0 && !isDifferent)
       return;
     lastLoadedProjectId.current = selectedProjectId;
 
-    const scenes = selectedProject.scenes || [];
+    // Reuse the already declared scenes variable
+
 
     if (scenes.length > 0) {
       // Convert backend scenes into our frame format

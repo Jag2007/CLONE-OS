@@ -11,6 +11,10 @@
     "dev:backend:local": "env DB_HOST=127.0.0.1 DB_PORT=5432 DB_USERNAME=cloneos DB_PASSWORD=cloneos DB_NAME=cloneos DB_SSL=false REDIS_HOST=127.0.0.1 REDIS_PORT=6379 NODE_ENV=development npm --prefix backend run dev",
     "dev:frontend": "npm --prefix frontend start",
     "seed:actors:local": "env DB_HOST=127.0.0.1 DB_PORT=5432 DB_USERNAME=cloneos DB_PASSWORD=cloneos DB_NAME=cloneos DB_SSL=false REDIS_HOST=127.0.0.1 REDIS_PORT=6379 NODE_ENV=development npm --prefix backend run seed:actors",
-    "build": "npm --prefix backend run build && npm --prefix frontend run build"
+    "build": "npm --prefix backend run build && npm --prefix frontend run build",
+    "tunnel": "node start-tunnel.js"
+  },
+  "devDependencies": {
+    "localtunnel": "^2.0.2"
   }
 }

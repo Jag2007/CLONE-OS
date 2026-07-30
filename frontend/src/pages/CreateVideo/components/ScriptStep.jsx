@@ -144,10 +144,25 @@ export default function ScriptStep({ projectId, onBack, onProceedToVideo, regenP
       return;
     }
     if (!selectedProject) return;
-    if (lastLoadedProjectId.current === projectId && frames.length > 0) return;
-    lastLoadedProjectId.current = projectId;
 
+    // Check if the loaded frames differ from the server project scenes to support refresh/redo updates
     const scenes = selectedProject.scenes || [];
+    const isDifferent =
+      frames.length !== scenes.length ||
+      scenes.some((scene) => {
+        const frame = frames.find((f) => f.id === scene.id);
+        if (!frame) return true;
+        return (
+          frame.sketchUrl !== (scene.sketchUrl || null) ||
+          frame.finalImageUrl !== (scene.finalImageUrl || null) ||
+          frame.status !== (scene.status || 'pending') ||
+          frame.aiPrompt !== (scene.aiPrompt || null)
+        );
+      });
+
+    if (lastLoadedProjectId.current === projectId && frames.length > 0 && !isDifferent) return;
+    lastLoadedProjectId.current = projectId;
+    // Reuse the already declared scenes variable
     if (scenes.length > 0) {
       const loadedFrames = scenes
         .sort((a, b) => (a.sequenceOrder ?? 0) - (b.sequenceOrder ?? 0))

@@ -49,6 +49,12 @@ export default function CreateVideoPage() {
     isError: isProjectError,
   } = useGetProjectById(effectiveProjectId);
 
+  const [hasInitializedStep, setHasInitializedStep] = useState(false);
+
+  useEffect(() => {
+    setHasInitializedStep(false);
+  }, [effectiveProjectId]);
+
   useEffect(() => {
     const s = location.state;
     if (s?.isRegenerate && s?.projectId) setIsRegenMode(true);
@@ -57,6 +63,7 @@ export default function CreateVideoPage() {
   useEffect(() => {
     if (!effectiveProjectId) {
       setCurrentStep(0);
+      setHasInitializedStep(false);
       return;
     }
     if (isProjectError) {
@@ -65,8 +72,13 @@ export default function CreateVideoPage() {
     }
     if (!project) return;
     setVideoName(project.projectName ?? "");
-    setCurrentStep(deriveStepFromProject(project));
-  }, [effectiveProjectId, project, isProjectError, navigate]);
+
+    // Only initialize the wizard step once per project load
+    if (!hasInitializedStep) {
+      setCurrentStep(deriveStepFromProject(project));
+      setHasInitializedStep(true);
+    }
+  }, [effectiveProjectId, project, isProjectError, navigate, hasInitializedStep]);
 
   const handleProjectCreated = (id, actor, name) => {
     navigate(`/create-video/${id}`, { state: location.state });
