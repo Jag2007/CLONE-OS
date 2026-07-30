@@ -32,6 +32,9 @@ export class StorageService {
 
   // Used for Python API (Raw Data) - NEW METHOD
   async uploadBuffer(buffer: Buffer | ArrayBuffer, objectPath: string, contentType: string = 'image/png'): Promise<string> {
+    if (config.storage.driver === 'freeimage') {
+      return this.uploadToFreeImage(buffer);
+    }
     if (config.storage.driver === 'local') {
       return this.uploadBufferLocally(buffer, objectPath);
     }
@@ -51,6 +54,35 @@ export class StorageService {
     } catch (error) {
       console.error('S3 Upload Error:', error);
       throw new Error('Failed to upload image to storage');
+    }
+  }
+
+  private async uploadToFreeImage(buffer: Buffer | ArrayBuffer): Promise<string> {
+    try {
+      const base64 = Buffer.isBuffer(buffer)
+        ? buffer.toString('base64')
+        : Buffer.from(buffer).toString('base64');
+
+      const formData = new URLSearchParams();
+      formData.append('source', base64);
+      formData.append('action', 'upload');
+
+      const apiKey = config.workers.videoImageHostApiKey || '6d207e02198a847aa98d0a2a901485a5';
+      const url = `${config.workers.videoImageHostApiUrl || 'https://freeimage.host/api/1/upload'}?key=${apiKey}`;
+
+      const response = await axios.post(url, formData, {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      });
+
+      if (response.data && response.data.image && response.data.image.url) {
+        return response.data.image.url;
+      }
+      throw new Error('Invalid response from freeimage.host: ' + JSON.stringify(response.data));
+    } catch (error: any) {
+      console.error('FreeImage upload error:', error.message);
+      throw new Error('Failed to upload image to freeimage.host: ' + error.message);
     }
   }
 

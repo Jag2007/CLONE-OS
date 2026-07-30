@@ -35,7 +35,7 @@ const envSchema = z.object({
   AWS_SECRET_ACCESS_KEY: z.string(),
   AWS_REGION: z.string().default("us-east-1"),
   AWS_BUCKET_NAME: z.string(),
-  STORAGE_DRIVER: z.enum(["s3", "local"]).default("s3"),
+  STORAGE_DRIVER: z.enum(["s3", "local", "freeimage"]).default("s3"),
   BACKEND_PUBLIC_URL: z.string().default("http://localhost:3001"),
   IMAGE_GENERATION_API_URL: z.string().default("http://localhost:8000"),
   VIDEO_WORKER_API_URL: z.string().default("http://localhost:8001"),
