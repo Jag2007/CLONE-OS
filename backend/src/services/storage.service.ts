@@ -33,7 +33,11 @@ export class StorageService {
   // Used for Python API (Raw Data) - NEW METHOD
   async uploadBuffer(buffer: Buffer | ArrayBuffer, objectPath: string, contentType: string = 'image/png'): Promise<string> {
     if (config.storage.driver === 'freeimage') {
-      return this.uploadToFreeImage(buffer);
+      if (contentType.startsWith('image/')) {
+        return this.uploadToFreeImage(buffer);
+      }
+      // Fallback to local storage for videos and other non-image assets
+      return this.uploadBufferLocally(buffer, objectPath);
     }
     if (config.storage.driver === 'local') {
       return this.uploadBufferLocally(buffer, objectPath);
