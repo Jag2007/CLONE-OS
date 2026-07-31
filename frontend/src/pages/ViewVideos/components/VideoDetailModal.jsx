@@ -18,6 +18,7 @@ import {
   CheckCircle2,
   Loader,
   RefreshCw,
+  Download,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -59,6 +60,24 @@ export default function VideoDetailModal({
   const navigate = useNavigate();
 
   if (!project) return null;
+
+  const handleDownload = async () => {
+    if (!project?.storageUrl) return;
+    try {
+      const response = await fetch(project.storageUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${project.projectName || "video"}.mp4`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      window.open(project.storageUrl, "_blank");
+    }
+  };
 
   const scenes = (project.scenes || []).sort(
     (a, b) => (a.sequenceOrder ?? 0) - (b.sequenceOrder ?? 0),
@@ -117,11 +136,22 @@ export default function VideoDetailModal({
               Generated Video
             </h3>
             {project.storageUrl ? (
-              <div className="vv-modal-video-wrap">
-                <video controls className="vv-modal-video">
-                  <source src={project.storageUrl} type="video/mp4" />
-                  Your browser does not support the video tag.
-                </video>
+              <div className="space-y-3">
+                <div className="vv-modal-video-wrap">
+                  <video controls className="vv-modal-video">
+                    <source src={project.storageUrl} type="video/mp4" />
+                    Your browser does not support the video tag.
+                  </video>
+                </div>
+                <div className="flex justify-end">
+                  <Button
+                    onClick={handleDownload}
+                    className="flex items-center gap-2 border border-border-default bg-secondary text-secondary-foreground hover:bg-secondary/80"
+                  >
+                    <Download className="w-4 h-4" />
+                    Download Video
+                  </Button>
+                </div>
               </div>
             ) : (
               <div className="vv-modal-video-placeholder">
@@ -255,9 +285,22 @@ export default function VideoDetailModal({
                           )}
                         </div>
 
-                        {/* Images — show both final and sketch */}
-                        {(scene.finalImageUrl || scene.sketchUrl) && (
+                        {/* Images & Video Clips — show final, sketch, and video clip */}
+                        {(scene.finalImageUrl || scene.sketchUrl || scene.videoUrl) && (
                           <div className="vv-modal-scene-images">
+                            {scene.videoUrl && (
+                              <div className="vv-modal-scene-img-block">
+                                <span className="vv-modal-scene-img-label final bg-blue-600/85 text-white border border-blue-500/30">
+                                  Video Clip
+                                </span>
+                                <video
+                                  src={scene.videoUrl}
+                                  controls
+                                  className="vv-modal-scene-img"
+                                  style={{ maxHeight: "120px", objectFit: "cover" }}
+                                />
+                              </div>
+                            )}
                             {scene.finalImageUrl && (
                               <div className="vv-modal-scene-img-block">
                                 <span className="vv-modal-scene-img-label final">

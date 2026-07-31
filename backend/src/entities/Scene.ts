@@ -45,6 +45,9 @@ export class Scene {
   @Column({ name: 'final_image_url', type: 'text', nullable: true })
   finalImageUrl!: string | null;
 
+  @Column({ name: 'video_url', type: 'text', nullable: true })
+  videoUrl!: string | null;
+
   @Column({
     type: 'enum',
     enum: SceneStatus,

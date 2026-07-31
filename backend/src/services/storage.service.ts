@@ -9,13 +9,20 @@ export class StorageService {
   private s3: S3Client;
 
   constructor() {
-    this.s3 = new S3Client({
+    const s3Config: any = {
       region: config.aws.region,
       credentials: {
         accessKeyId: config.aws.accessKeyId,
         secretAccessKey: config.aws.secretAccessKey,
       },
-    });
+    };
+
+    if (config.aws.endpoint) {
+      s3Config.endpoint = config.aws.endpoint;
+      s3Config.forcePathStyle = true;
+    }
+
+    this.s3 = new S3Client(s3Config);
   }
 
   // Used for OpenAI (URL-based)
@@ -53,7 +60,17 @@ export class StorageService {
 
       await this.s3.send(command);
 
-      // Return the permanent S3 URL
+      // Return the permanent S3 / Supabase / Custom URL
+      if (config.aws.endpoint) {
+        if (config.aws.endpoint.includes('supabase.co')) {
+          const projectUrl = config.aws.endpoint
+            .replace(".storage.supabase.co", ".supabase.co")
+            .replace(/\/storage\/v1\/s3\/?$/, "");
+          return `${projectUrl}/storage/v1/object/public/${config.aws.bucketName}/${objectPath}`;
+        }
+        return `${config.aws.endpoint}/${config.aws.bucketName}/${objectPath}`;
+      }
+
       return `https://${config.aws.bucketName}.s3.${config.aws.region}.amazonaws.com/${objectPath}`;
     } catch (error) {
       console.error('S3 Upload Error:', error);

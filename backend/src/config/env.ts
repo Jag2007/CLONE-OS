@@ -35,6 +35,7 @@ const envSchema = z.object({
   AWS_SECRET_ACCESS_KEY: z.string(),
   AWS_REGION: z.string().default("us-east-1"),
   AWS_BUCKET_NAME: z.string(),
+  AWS_ENDPOINT: z.string().optional(),
   STORAGE_DRIVER: z.enum(["s3", "local", "freeimage"]).default("s3"),
   BACKEND_PUBLIC_URL: z.string().default("http://localhost:3001"),
   IMAGE_GENERATION_API_URL: z.string().default("http://localhost:8000"),
@@ -115,6 +116,7 @@ export const config = {
     secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
     region: env.AWS_REGION,
     bucketName: env.AWS_BUCKET_NAME,
+    endpoint: env.AWS_ENDPOINT,
   },
   storage: {
     driver: env.STORAGE_DRIVER,

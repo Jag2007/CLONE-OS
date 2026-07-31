@@ -1246,7 +1246,31 @@ Structure:
         console.log(`Generated Motion Prompt for Scene ${scene.sequenceOrder}: "${prompt}"`);
 
         const clipUrl = await this.createWanVideoClip(scene.finalImageUrl!, prompt);
-        clipUrls.push(clipUrl);
+        
+        let persistentClipUrl = clipUrl;
+        try {
+          console.log(`Downloading temporary video clip for Scene ${scene.sequenceOrder} from ${clipUrl}...`);
+          const response = await axios.get(clipUrl, {
+            responseType: "arraybuffer",
+            timeout: 60000,
+          });
+          console.log(`Uploading scene ${scene.sequenceOrder} video clip to persistent storage...`);
+          persistentClipUrl = await this.storageService.uploadBuffer(
+            Buffer.from(response.data as ArrayBuffer),
+            `projects/${projectId}/scenes/${scene.id}/video_${Date.now()}.mp4`,
+            "video/mp4"
+          );
+          console.log(`Saved persistent video clip for Scene ${scene.sequenceOrder}: ${persistentClipUrl}`);
+        } catch (storageError) {
+          console.error(`Failed to store video clip persistently for Scene ${scene.sequenceOrder}, using raw CDN url:`, storageError);
+        }
+
+        // Save persistent URL to the database
+        await this.sceneRepository.update(scene.id, {
+          videoUrl: persistentClipUrl,
+        });
+
+        clipUrls.push(persistentClipUrl);
       }
 
       const videoUrl = await this.stitchVideoClips(clipUrls, projectId);
