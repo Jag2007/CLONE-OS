@@ -30,6 +30,8 @@ const envSchema = z.object({
   JWT_SECRET: z.string(),
   JWT_EXPIRES_IN: z.string().default("7d"),
   OPENAI_API_KEY: z.string(),
+  OPENAI_SCRIPT_MODEL: z.string().default("gpt-4o"),
+  OPENAI_SCRIPT_FALLBACK_MODEL: z.string().default("gpt-4o-mini"),
   OPENAI_IMAGE_MODEL: z.string().default("gpt-image-1"),
   AWS_ACCESS_KEY_ID: z.string(),
   AWS_SECRET_ACCESS_KEY: z.string(),
@@ -133,6 +135,8 @@ export const config = {
   },
   openai: {
     apiKey: env.OPENAI_API_KEY,
+    scriptModel: env.OPENAI_SCRIPT_MODEL,
+    scriptFallbackModel: env.OPENAI_SCRIPT_FALLBACK_MODEL,
     imageModel: env.OPENAI_IMAGE_MODEL,
   },
   workers: {

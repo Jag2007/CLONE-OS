@@ -55,6 +55,7 @@ type RunPodImageVariables = {
   triggerWord: string;
   loraName: string;
   loraUrl: string;
+  useLora: boolean;
   width: number;
   height: number;
 };
@@ -117,6 +118,103 @@ export class ProjectService {
     const sceneDuration = Number(config.workers.videoDuration);
     const secondsPerScene = Number.isFinite(sceneDuration) && sceneDuration > 0 ? sceneDuration : 5;
     return Math.max(1, Math.ceil(durationSeconds / secondsPerScene));
+  }
+
+  private buildStoryboardSystemPrompt(
+    sceneCount: number,
+    requestedDurationSeconds: number,
+    secondsPerScene: number,
+    actorName: string,
+  ): string {
+    return `You are a professional English-language commercial director, continuity supervisor, and expert cinematographer. Break the user's request into exactly ${sceneCount} distinct scenes for a ${requestedDurationSeconds}-second commercial. Each scene represents about ${secondsPerScene} seconds of screen time.
+
+Story and continuity rules:
+- Write scriptText and aiPrompt in English only.
+- Keep every scene framed for 16:9 / 1.78:1 video.
+- Identify the single hero subject from the user's prompt: the product, item, brand, service, or object the commercial is about.
+- Keep that hero subject visually consistent across all scenes: same product category, packaging/materials, color palette, props, and brand identity unless the user explicitly asks for a change.
+- Build one continuous commercial, not disconnected shots. Use a clear arc: hook, product/context reveal, benefit or sensory proof, human reaction/use case, brand payoff, and final call-to-action. Adapt this arc if the scene count is not six.
+- Do not invent readable brand text, labels, logos, or slogans unless the user gives them. Use [Brand Name] only when a brand is missing.
+
+Character rules:
+- The only available human character is ${actorName}.
+- Whenever a full or visible human character is needed, use the exact name "${actorName}" in BOTH scriptText and aiPrompt. Do not write he, she, man, woman, person, hero, model, customer, patron, family, crowd, people, or they as the subject.
+- If a scene is product-only, environment-only, ingredient-only, pack-shot, logo-shot, close-up, macro shot, or only a hand/object interaction, do NOT mention ${actorName} or any generic human character.
+- If ${actorName} is not explicitly required by the story beat, prefer a product-only cinematic shot to avoid unnecessary character insertion.
+
+Return only a JSON object with a key "scenes" containing an array.
+
+Required JSON Structure:
+{
+  "scenes": [
+    {
+      "sequenceOrder": 1,
+      "scriptText": "Voiceover or action description...",
+      "aiPrompt": "Detailed cinematic description"
+    }
+  ]
+}
+
+For every aiPrompt, follow this structure:
+[SHOT TYPE], [SUBJECT & ACTION], [ENVIRONMENT & SETTING], [LIGHTING SETUP], [LENS & DEPTH OF FIELD], [CAMERA ANGLE & MOVEMENT], [FOCUS POINT & PULLING], [COLOR GRADE & FILM LOOK], [MOOD & ATMOSPHERE], [ASPECT RATIO], [TECHNICAL REFERENCE]
+
+Use precise film terminology. Choose from shot types like EWS, WS, FS, MWS, MS, MCU, CU, ECU, OTS, POV, aerial; composition principles like symmetry, leading lines, negative space, layered depth; lenses like 24mm, 35mm, 50mm, 85mm, macro, anamorphic; lighting like three-point, Rembrandt, motivated, practical, golden hour, silhouette; and camera references like ARRI Alexa 65, RED Monstro, Sony Venice, Kodak Vision3 500T. Avoid generic wording. Every prompt must feel like a director's shot-list entry.`;
+  }
+
+  private sceneUsesActor(scene: Scene, actorName: string, triggerWord?: string | null): boolean {
+    const text = `${scene.scriptText || ""}\n${scene.aiPrompt || ""}`.toLowerCase();
+    const actor = actorName.trim().toLowerCase();
+    const trigger = String(triggerWord || "").trim().toLowerCase();
+
+    return Boolean(
+      actor && new RegExp(`\\b${actor.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(text),
+    ) || Boolean(
+      trigger && new RegExp(`\\b${trigger.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(text),
+    );
+  }
+
+  private normalizeFinalImagePrompt(basePrompt: string, actorName: string, triggerWord: string, useLora: boolean): string {
+    const continuity = "convert the provided storyboard sketch into a photorealistic cinematic commercial frame, preserve the sketch composition, hero product, environment, camera angle, and 16:9 framing";
+    if (useLora) {
+      const actorSafePrompt = basePrompt
+        .replace(/\b(he|she|him|her|his|hers|man|woman|person|hero|model|customer|patron)\b/gi, actorName)
+        .replace(new RegExp(`\\b${actorName}\\b`, "gi"), triggerWord);
+      return `${continuity}, ${actorSafePrompt}, ${triggerWord} is the only visible human character, do not add any extra people, photorealistic, cinematic lighting, 16:9`;
+    }
+
+    const productOnlyPrompt = basePrompt
+      .replace(new RegExp(`\\b${actorName}\\b`, "gi"), "")
+      .replace(new RegExp(`\\b${triggerWord}\\b`, "gi"), "")
+      .replace(/\b(he|she|him|her|his|hers|man|woman|person|hero|model|customer|patron|people|crowd|family)\b/gi, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    return `${continuity}, ${productOnlyPrompt}, product-only commercial frame, no people, no human face, no full body character, no extra person, photorealistic, cinematic lighting, 16:9`;
+  }
+
+  private async createScriptCompletion(messages: Array<{ role: "system" | "user"; content: string }>) {
+    try {
+      return await this.openai.chat.completions.create({
+        model: config.openai.scriptModel,
+        messages,
+        response_format: { type: "json_object" },
+      });
+    } catch (error: any) {
+      const code = error?.error?.code || error?.code;
+      const canFallback =
+        error?.status === 429 &&
+        code !== "insufficient_quota" &&
+        config.openai.scriptFallbackModel &&
+        config.openai.scriptFallbackModel !== config.openai.scriptModel;
+
+      if (!canFallback) throw error;
+
+      return this.openai.chat.completions.create({
+        model: config.openai.scriptFallbackModel,
+        messages,
+        response_format: { type: "json_object" },
+      });
+    }
   }
 
   private getWorkerAuthHeaders(): Record<string, string> {
@@ -982,8 +1080,13 @@ export class ProjectService {
           if (workflow["21"]?.inputs) {
             workflow["21"].inputs.image = "image.png";
           }
-          if (workflow["22"]?.inputs && vars.loraName) {
-            workflow["22"].inputs.lora_name = vars.loraName;
+          if (workflow["22"]?.inputs) {
+            if (vars.useLora && vars.loraName) {
+              workflow["22"].inputs.lora_name = vars.loraName;
+            }
+            if (!vars.useLora) {
+              workflow["22"].inputs.strength_model = 0;
+            }
           }
         }
 
@@ -1030,16 +1133,29 @@ export class ProjectService {
     const triggerWord = cloneName || actor.triggerWord || actor.name?.toLowerCase();
     const loraUrl = clone?.s3_url || clone?.weights_url || "";
     const loraName = cloneName ? `${cloneName}.safetensors` : "";
+    const actorName = actor.name || "Tarina";
+    const effectiveTriggerWord = triggerWord || actorName.toLowerCase();
     const basePrompt = scene.aiPrompt || scene.scriptText || "";
-    const prompt = `full body shot of ${triggerWord}, ${basePrompt}, photorealistic, cinematic lighting, 16:9`;
+    const useLora = this.sceneUsesActor(scene, actorName, effectiveTriggerWord);
+    const prompt = this.normalizeFinalImagePrompt(
+      basePrompt,
+      actorName,
+      effectiveTriggerWord,
+      useLora,
+    );
+
+    console.log(
+      `Final image generation for Scene ${scene.sequenceOrder}: ${useLora ? "using" : "skipping"} LoRA`,
+    );
 
     const sketchBase64 = await this.imageUrlToBase64(scene.sketchUrl);
     const input = await this.buildRunPodImageInput({
       sketchBase64,
       prompt,
-      triggerWord,
-      loraName,
+      triggerWord: effectiveTriggerWord,
+      loraName: useLora ? loraName : "",
       loraUrl,
+      useLora,
       width: config.workers.runpodImageWidth,
       height: config.workers.runpodImageHeight,
     });
@@ -1318,51 +1434,29 @@ Structure:
     const requestedDurationSeconds = this.getRequestedDurationSeconds(prompt);
     const sceneCount = this.getSceneCountForDuration(requestedDurationSeconds);
     const secondsPerScene = Number(config.workers.videoDuration) || 5;
+    const actor = project.actorId
+      ? await this.actorService.getActorById(project.actorId)
+      : null;
+    const actorName = actor?.name || "Tarina";
 
     // 1. Call OpenAI "Director"
     let completion;
     try {
-      completion = await this.openai.chat.completions.create({
-  model: "gpt-4o",
-  messages: [
-    {
-      role: "system",
-      content: `You are a professional video director and expert cinematographer. Break the user's request into exactly ${sceneCount} distinct scenes for a ${requestedDurationSeconds}-second commercial. Each scene should represent about ${secondsPerScene} seconds of screen time.
-      Always write scriptText and aiPrompt in English only. Do not use any other language.
-      Keep the commercial framed for 16:9 video.
-      Return a JSON object with a key "scenes" containing an array. 
-
-      Required JSON Structure:
-      {
-        "scenes": [
-          {
-            "sequenceOrder": 1,
-            "scriptText": "Voiceover or action description...",
-            "aiPrompt": "Detailed cinematic description"
-          }
-        ]
-      }
-
-      For the "aiPrompt", follow this specific structure:
-      [SHOT TYPE], [SUBJECT & ACTION], [ENVIRONMENT & SETTING], [LIGHTING SETUP], [LENS & DEPTH OF FIELD], [CAMERA ANGLE & MOVEMENT], [FOCUS POINT & PULLING], [COLOR GRADE & FILM LOOK], [MOOD & ATMOSPHERE], [ASPECT RATIO], [TECHNICAL REFERENCE]
-
-      KNOWLEDGE BASE TO UTILIZE:
-      - SHOT TYPES: EWS, WS, FS (Long Shot), MWS, MS, MCU, CU, ECU, OTS, POV, Aerial.
-      - MISE-EN-SCÈNE: Gestalt laws (Proximity, Similarity, Continuity), Symmetry, Leading lines, Negative space, Layered depth.
-      - CAMERA: Eye-level, Low/High angle, Dutch angle, Overhead. Movement: Dolly, Pan, Tilt, Tracking, Steadicam, Whip pan, Zolly.
-      - OPTICS: Wide (14mm), Standard (50mm), Telephoto (85mm+), Anamorphic (oval bokeh), Tilt-shift, Macro.
-      - FOCUS: Focus pulling, Rack focus, Soft vs Hard focus, Shallow DoF, Foreground blur.
-      - LIGHTING: Three-point, Chiaroscuro, Rembrandt, Motivated, Practical, Magic hour, Golden hour, Neon, Silhouette.
-      - LOOK & GENRE: Magic Realism, Slice of Life, Realism, Neo-noir, Teal & Orange, Bleach bypass, Film grain, Halation.
-      - TECHNICAL: ARRI Alexa 65, RED Monstro, Kodak Vision3 500T, 16:9 / 1.78:1 aspect ratio.
-       Here is your updated system prompt as a continuous paragraph:
-
-You are an expert cinematographer and visual storytelling AI. Your job is to transform any scene description into a richly detailed, cinematic image prompt for AI image generation (DALL·E / Stable Diffusion / Midjourney). You have deep knowledge of professional filmmaking, cinematography, and visual aesthetics. Always use precise film industry terminology in your output prompts. Your knowledge base includes: Shot Types (Extreme Wide Shot, Wide Shot, Full Shot/Long Shot, Medium Wide Shot, Medium Shot, Medium Close-Up, Close-Up, Extreme Close-Up, Over-the-Shoulder, Two-Shot, Insert Shot, Cutaway, POV Shot, Aerial Shot, Bird's Eye View, Worm's Eye View); Mise-en-scène (set design, costume and makeup, props, blocking, hair and wardrobe, spatial relationships, environmental storytelling through visual elements); Camera Angles (Eye-level, Low angle, High angle, Dutch angle/canted, Overhead/top-down, Canted frame, Oblique angle); Camera Movement (Static/locked off, Dolly in/out, Pan left/right, Tilt up/down, Truck left/right, Pedestal up/down, Crane shot, Boom shot, Handheld/shaky/kinetic, Steadicam/smooth/floating, Whip pan, Zolly/dolly zoom/Vertigo effect, Rack focus, Follow shot, Arc shot, Tracking shot); Lens & Optics (Wide angle 14mm/24mm, Standard 35mm/50mm, Telephoto 85mm/135mm/200mm, Anamorphic lens, Tilt-shift, Macro, Prime vs zoom); Depth of Field & Focus (Shallow DoF/bokeh, Deep DoF, Rack focus, Bokeh, Foreground element blur, Hard focus, Soft focus, Focus pulling, Split diopter, Tilt-shift focus, Breathing, Fixed focus); Lighting Setups (Three-point lighting, High-key, Low-key, Chiaroscuro, Rembrandt lighting, Split lighting, Butterfly/Paramount lighting, Motivated light, Practical lights, Natural light, Hard light, Soft light, Backlighting/Rim lighting, Golden hour, Magic hour, Neon/practical color, Silhouette); Color Grading & Film Look (Warm grade, Cool grade, Teal and orange, Desaturated, High contrast, Low contrast, Film grain, Halation, Vignette, Cross-processed, Black and white, Bleach bypass, LUT applied); Film Stocks & Camera References (Kodak Vision3 500T, Fuji Eterna, Kodak Portra 400, ARRI Alexa 65, RED Monstro, Sony Venice, Panavision, 1970s New Hollywood, 1980s neon, classic Hollywood golden age); Aspect Ratios (1.78:1/16:9); Composition Rules including Gestalt Laws (Rule of thirds, Golden ratio/Fibonacci spiral, Symmetry, Leading lines, Foreground framing, Negative space, Headroom, Looking room/Nose room, Layered depth, Environmental storytelling, Proximity, Similarity, Continuity, Closure, Figure-Ground, Common Fate); and Mood & Genre References (Film noir, Neo-noir, Epic/Blockbuster, Indie film, Horror, Sci-fi, Western, Romance, Documentary, Magic realism, Realism, Slice of life). When given a scene description, output a prompt in this structure: [SHOT TYPE], [MISE-EN-SCÈNE], [SUBJECT & ACTION], [ENVIRONMENT & SETTING], [LIGHTING SETUP], [LENS & DEPTH OF FIELD], [CAMERA ANGLE & MOVEMENT], [FOCUS POINT & PULLING], [COLOR GRADE & FILM LOOK], [MOOD & ATMOSPHERE], [ASPECT RATIO], [TECHNICAL REFERENCE]. Always include at least one term from each category, match the mood of the scene precisely, be specific with terminology like "Rembrandt lighting" instead of "dramatic lighting," use 16:9 / 1.78:1 aspect ratio, and never output generic descriptions—every prompt must feel like a director's shot list entry.`
-    },
-    { role: "user", content: `Create exactly ${sceneCount} English storyboard scenes for this ${requestedDurationSeconds}-second 16:9 commercial: ${prompt}` },
-  ],
-  response_format: { type: "json_object" },
-      });
+      completion = await this.createScriptCompletion([
+        {
+          role: "system",
+          content: this.buildStoryboardSystemPrompt(
+            sceneCount,
+            requestedDurationSeconds,
+            secondsPerScene,
+            actorName,
+          ),
+        },
+        {
+          role: "user",
+          content: `Create exactly ${sceneCount} English storyboard scenes for this ${requestedDurationSeconds}-second 16:9 commercial: ${prompt}`,
+        },
+      ]);
     } catch (error: any) {
       if (error?.code === "invalid_api_key" || error?.status === 401) {
         throw new AppError(
@@ -1372,9 +1466,12 @@ You are an expert cinematographer and visual storytelling AI. Your job is to tra
       }
 
       if (error?.status === 429) {
+        const code = error?.error?.code || error?.code;
         throw new AppError(
           502,
-          "OpenAI request was rate limited or has insufficient quota.",
+          code === "insufficient_quota"
+            ? "OpenAI quota or billing is exhausted for this API key/project."
+            : `OpenAI script model ${config.openai.scriptModel} is rate limited right now. Try again shortly or set OPENAI_SCRIPT_MODEL=gpt-4o-mini in backend/.env.`,
         );
       }
 
