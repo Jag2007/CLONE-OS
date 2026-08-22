@@ -60,6 +60,12 @@ type RunPodImageVariables = {
   height: number;
 };
 
+type PromptSafetyCheck = {
+  ok: boolean;
+  reason?: string;
+  guidance?: string;
+};
+
 export class ProjectService {
   private projectRepository: Repository<Project>;
   private userService: UserService;
@@ -99,6 +105,104 @@ export class ProjectService {
     }
   }
 
+  private checkPromptSafety(text: string): PromptSafetyCheck {
+    const normalized = text
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    const explicitPatterns = [
+      /\bnude\b/,
+      /\bnaked\b/,
+      /\btopless\b/,
+      /\blingerie\b/,
+      /\bunderwear\b/,
+      /\bcleavage\b/,
+      /\bsexual\b/,
+      /\bseductive\b/,
+      /\berotic\b/,
+      /\bbikini\b/,
+      /\bskin\s*show\b/,
+      /\bexposed\s*skin\b/,
+    ];
+
+    if (explicitPatterns.some((pattern) => pattern.test(normalized))) {
+      return {
+        ok: false,
+        reason: "The prompt contains sexualized or skin-revealing framing.",
+        guidance:
+          "Please rewrite it as a fully clothed, brand-safe commercial scene. Describe the product, setting, mood, camera style, and action without bikini, nudity, lingerie, cleavage, or skin-show terms.",
+      };
+    }
+
+    const hasMinor =
+      /\b(child|children|kid|kids|baby|teen|teenager|minor|schoolgirl|schoolboy)\b/.test(
+        normalized,
+      );
+    const hasSensitiveBodyContext =
+      /\b(bath|bathing|shower|swimwear|swimsuit|changing|bedroom|skin|body)\b/.test(
+        normalized,
+      );
+
+    if (hasMinor && hasSensitiveBodyContext) {
+      return {
+        ok: false,
+        reason: "The prompt combines minors with sensitive body or clothing context.",
+        guidance:
+          "Please rewrite it as a safe, fully clothed family-friendly scene, focused on the product and environment.",
+      };
+    }
+
+    const violentPatterns = [
+      /\bblood\b/,
+      /\bgore\b/,
+      /\bweapon\b/,
+      /\bgun\b/,
+      /\bkill\b/,
+      /\bmurder\b/,
+      /\bsuicide\b/,
+      /\bself\s*harm\b/,
+    ];
+
+    if (violentPatterns.some((pattern) => pattern.test(normalized))) {
+      return {
+        ok: false,
+        reason: "The prompt contains violent or self-harm content.",
+        guidance:
+          "Please rewrite it as a non-violent commercial concept focused on the product benefit, setting, and mood.",
+      };
+    }
+
+    return { ok: true };
+  }
+
+  private async validatePromptForStoryboard(prompt: string): Promise<void> {
+    const safety = this.checkPromptSafety(prompt);
+    if (!safety.ok) {
+      throw new AppError(
+        400,
+        `${safety.reason} ${safety.guidance}`,
+      );
+    }
+
+    await this.moderateText(prompt);
+  }
+
+  private normalizeVisualStyle(style?: unknown): string {
+    const normalized = typeof style === "string" ? style.trim().toLowerCase() : "";
+    const allowed = new Set([
+      "cinematic",
+      "photoreal",
+      "anime",
+      "luxury",
+      "product macro",
+      "documentary",
+    ]);
+
+    return allowed.has(normalized) ? normalized : "cinematic";
+  }
+
   private getRequestedDurationSeconds(prompt: string): number {
     const normalized = prompt.toLowerCase();
     const minuteMatch = normalized.match(/(\d+(?:\.\d+)?)\s*(?:minute|minutes|min|mins)\b/);
@@ -125,16 +229,19 @@ export class ProjectService {
     requestedDurationSeconds: number,
     secondsPerScene: number,
     actorName: string,
+    visualStyle: string,
   ): string {
     return `You are a professional English-language commercial director, continuity supervisor, and expert cinematographer. Break the user's request into exactly ${sceneCount} distinct scenes for a ${requestedDurationSeconds}-second commercial. Each scene represents about ${secondsPerScene} seconds of screen time.
 
 Story and continuity rules:
 - Write scriptText and aiPrompt in English only.
 - Keep every scene framed for 16:9 / 1.78:1 video.
+- Apply this selected visual style consistently unless it conflicts with safety or brand clarity: ${visualStyle}.
 - Identify the single hero subject from the user's prompt: the product, item, brand, service, or object the commercial is about.
 - Keep that hero subject visually consistent across all scenes: same product category, packaging/materials, color palette, props, and brand identity unless the user explicitly asks for a change.
 - Build one continuous commercial, not disconnected shots. Use a clear arc: hook, product/context reveal, benefit or sensory proof, human reaction/use case, brand payoff, and final call-to-action. Adapt this arc if the scene count is not six.
 - Do not invent readable brand text, labels, logos, or slogans unless the user gives them. Use [Brand Name] only when a brand is missing.
+- Keep all scenes brand-safe, fully clothed when humans appear, and suitable for a general audience. Do not include sexualized styling, bikini, lingerie, nudity, cleavage, skin-show framing, gore, weapons, or self-harm.
 
 Character rules:
 - The only available human character is ${actorName}.
@@ -1424,16 +1531,17 @@ Structure:
     return this.projectRepository.save(project);
   }
 
-  async generateScript(projectId: string, prompt: string): Promise<Scene[]> {
+  async generateScript(projectId: string, prompt: string, style?: unknown): Promise<Scene[]> {
     const project = await this.getProjectById(projectId);
     if (!project) throw new AppError(404, "Project not found");
 
     // Check content safety first
-    await this.moderateText(prompt);
+    await this.validatePromptForStoryboard(prompt);
 
     const requestedDurationSeconds = this.getRequestedDurationSeconds(prompt);
     const sceneCount = this.getSceneCountForDuration(requestedDurationSeconds);
     const secondsPerScene = Number(config.workers.videoDuration) || 5;
+    const visualStyle = this.normalizeVisualStyle(style);
     const actor = project.actorId
       ? await this.actorService.getActorById(project.actorId)
       : null;
@@ -1450,11 +1558,12 @@ Structure:
             requestedDurationSeconds,
             secondsPerScene,
             actorName,
+            visualStyle,
           ),
         },
         {
           role: "user",
-          content: `Create exactly ${sceneCount} English storyboard scenes for this ${requestedDurationSeconds}-second 16:9 commercial: ${prompt}`,
+          content: `Create exactly ${sceneCount} English storyboard scenes for this ${requestedDurationSeconds}-second 16:9 commercial. Selected visual style: ${visualStyle}. User prompt: ${prompt}`,
         },
       ]);
     } catch (error: any) {

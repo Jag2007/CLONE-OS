@@ -27,8 +27,8 @@ export const projectApi = () => {
     authAxios.get(`${prefix}/${id}`);
 
   // Generate script and storyboard scenes
-  const generateScript = async (projectId, prompt) => 
-    authAxios.post(`${prefix}/${projectId}/script`, { prompt });
+  const generateScript = async (projectId, prompt, style) =>
+    authAxios.post(`${prefix}/${projectId}/script`, { prompt, style });
 
   // Generate sketches for scenes
   const generateSketches = async (projectId) => 
@@ -160,8 +160,8 @@ export function useGenerateScript(options = {}) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ projectId, prompt }) => 
-      generateScript(projectId, prompt).then(res => res.data),
+    mutationFn: ({ projectId, prompt, style }) =>
+      generateScript(projectId, prompt, style).then(res => res.data),
     onSuccess: (data, variables) => {
       // Invalidate the project to get updated scenes
       queryClient.invalidateQueries({ 

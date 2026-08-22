@@ -124,14 +124,14 @@ export class ProjectController {
   ): Promise<void> => {
     try {
       const { id } = req.params;
-      const { prompt } = req.body; // User sends: { "prompt": "A commercial for Nike" }
+      const { prompt, style } = req.body; // User sends: { "prompt": "A commercial for Nike", "style": "cinematic" }
 
       if (!prompt) {
         res.status(400).json({ success: false, error: 'Prompt is required' });
         return;
       }
 
-      const scenes = await this.projectService.generateScript(id, prompt);
+      const scenes = await this.projectService.generateScript(id, prompt, style);
 
       res.json({
         success: true,

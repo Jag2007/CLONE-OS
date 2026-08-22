@@ -1153,6 +1153,21 @@ html {
   overflow: hidden;
 }
 
+.prompt-style-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: fit-content;
+  margin-top: 0.65rem;
+  padding: 0.25rem 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 36%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
 .prompt-edit-btn {
   flex-shrink: 0;
   border-color: var(--border-default);
@@ -1293,6 +1308,49 @@ html {
   font-size: 0.875rem;
 }
 
+.prompt-style-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+}
+
+.prompt-style-chip {
+  height: 32px;
+  padding: 0 0.8rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 0.78rem;
+  font-weight: 650;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.prompt-style-chip:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text-primary);
+  transform: translateY(-1px);
+}
+
+.prompt-style-chip.active {
+  border-color: color-mix(in srgb, var(--accent) 72%, white);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 24%, transparent), transparent),
+    var(--bg-elevated);
+  color: var(--accent);
+}
+
+.prompt-style-chip:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .script-textarea {
   background: var(--bg-primary) !important;
   border: 1px solid var(--border-default) !important;
@@ -1308,6 +1366,27 @@ html {
 .script-textarea:focus {
   border-color: var(--accent) !important;
   box-shadow: 0 0 0 3px var(--accent-muted) !important;
+}
+
+.prompt-guardrail-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  margin-top: 0.85rem;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid color-mix(in srgb, var(--destructive) 58%, transparent);
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--destructive) 14%, transparent), transparent),
+    var(--bg-primary);
+  color: color-mix(in srgb, var(--destructive) 78%, white);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.prompt-guardrail-alert svg {
+  flex: 0 0 auto;
+  margin-top: 0.1rem;
 }
 
 .script-actions {

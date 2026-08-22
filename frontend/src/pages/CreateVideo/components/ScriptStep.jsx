@@ -22,6 +22,8 @@ import {
   ArrowLeft,
   Archive,
   RotateCw,
+  AlertTriangle,
+  Sparkles,
 } from 'lucide-react';
 import { useToast } from '../../../hooks/use-toast';
 import {
@@ -57,6 +59,44 @@ const REGEN_TO_PHASE = {
   images: PHASE.IMAGES,
 };
 
+const VISUAL_STYLES = [
+  { key: 'cinematic', label: 'Cinematic' },
+  { key: 'photoreal', label: 'Photoreal' },
+  { key: 'anime', label: 'Anime' },
+  { key: 'luxury', label: 'Luxury' },
+  { key: 'product macro', label: 'Product Macro' },
+  { key: 'documentary', label: 'Documentary' },
+];
+
+const getPromptSafetyIssue = (value) => {
+  const text = value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!text) return null;
+
+  const sexualizedPattern =
+    /\b(nude|naked|topless|lingerie|underwear|cleavage|sexual|seductive|erotic|bikini|skin\s*show|exposed\s*skin)\b/;
+  if (sexualizedPattern.test(text)) {
+    return 'This prompt has sexualized or skin-revealing wording. Rewrite it as a fully clothed, brand-safe commercial scene.';
+  }
+
+  const hasMinor = /\b(child|children|kid|kids|baby|teen|teenager|minor|schoolgirl|schoolboy)\b/.test(text);
+  const hasSensitiveContext = /\b(bath|bathing|shower|swimwear|swimsuit|changing|bedroom|skin|body)\b/.test(text);
+  if (hasMinor && hasSensitiveContext) {
+    return 'This prompt combines minors with sensitive body or clothing context. Rewrite it as a fully clothed family-friendly scene.';
+  }
+
+  const violentPattern = /\b(blood|gore|weapon|gun|kill|murder|suicide|self\s*harm)\b/;
+  if (violentPattern.test(text)) {
+    return 'This prompt includes violent or self-harm content. Rewrite it as a non-violent commercial concept.';
+  }
+
+  return null;
+};
+
 const getApiErrorMessage = (error, fallback) =>
   error?.response?.data?.error ||
   error?.response?.data?.message ||
@@ -66,6 +106,7 @@ const getApiErrorMessage = (error, fallback) =>
 export default function ScriptStep({ projectId, onBack, onProceedToVideo, regenParam }) {
   const { toast } = useToast();
   const [prompt, setPrompt] = useState('');
+  const [selectedStyle, setSelectedStyle] = useState('cinematic');
   const [phase, setPhase] = useState(PHASE.PROMPT);
   const [promptCollapsed, setPromptCollapsed] = useState(false);
   const lastLoadedProjectId = useRef(null);
@@ -209,8 +250,17 @@ export default function ScriptStep({ projectId, onBack, onProceedToVideo, regenP
       toast({ title: 'Enter a prompt', description: 'Describe your script idea.', variant: 'destructive' });
       return;
     }
+    const promptSafetyIssue = getPromptSafetyIssue(userPrompt);
+    if (promptSafetyIssue) {
+      toast({
+        title: 'Prompt needs changes',
+        description: promptSafetyIssue,
+        variant: 'destructive',
+      });
+      return;
+    }
     try {
-      const res = await generateScript({ projectId, prompt: userPrompt });
+      const res = await generateScript({ projectId, prompt: userPrompt, style: selectedStyle });
       const newFrames = parseScenes(res);
       setFrames(newFrames);
       setPromptCollapsed(true);
@@ -515,7 +565,7 @@ export default function ScriptStep({ projectId, onBack, onProceedToVideo, regenP
     if (phase === PHASE.SKETCHES) return { label: 'Generate Final Images', handler: handleGenerateImages, loading: sceneProgress.type === 'image' || generatingImages };
     if (phase === PHASE.IMAGES) return { label: 'Regenerate Final Images', handler: handleGenerateImages, loading: sceneProgress.type === 'image' || generatingImages };
     return null;
-  }, [phase, generatingScript, generatingSketches, generatingImages, projectId, prompt, frames, sceneProgress.type]);
+  }, [phase, generatingScript, generatingSketches, generatingImages, projectId, prompt, selectedStyle, frames, sceneProgress.type]);
 
   const currentPhaseIdx = phaseIndex(phase);
   const showLoadingSkeleton = projectId && isLoadingProject && lastLoadedProjectId.current !== projectId;
@@ -525,6 +575,7 @@ export default function ScriptStep({ projectId, onBack, onProceedToVideo, regenP
   const progressPercent = sceneProgress.total
     ? Math.round((sceneProgress.completed / sceneProgress.total) * 100)
     : 0;
+  const promptSafetyIssue = !promptCollapsed ? getPromptSafetyIssue(prompt) : null;
 
   return (
     <div className="cv-step-container">
@@ -585,6 +636,10 @@ export default function ScriptStep({ projectId, onBack, onProceedToVideo, regenP
                   <div className="prompt-collapsed-text">
                     <span className="prompt-collapsed-label">Your prompt</span>
                     <p className="prompt-collapsed-value">{prompt}</p>
+                    <span className="prompt-style-summary">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      {VISUAL_STYLES.find((style) => style.key === selectedStyle)?.label || 'Cinematic'}
+                    </span>
                   </div>
                   <Button variant="outline" size="sm" className="prompt-edit-btn" onClick={() => setPromptCollapsed(false)}>
                     <Pencil className="w-3.5 h-3.5 mr-1.5" />
@@ -595,6 +650,19 @@ export default function ScriptStep({ projectId, onBack, onProceedToVideo, regenP
                 <div className="script-upload-area">
                   <div className="paste-script">
                     <p>Describe your script idea or enter a prompt</p>
+                    <div className="prompt-style-picker" aria-label="Visual style">
+                      {VISUAL_STYLES.map((style) => (
+                        <button
+                          key={style.key}
+                          type="button"
+                          className={`prompt-style-chip ${selectedStyle === style.key ? 'active' : ''}`}
+                          onClick={() => setSelectedStyle(style.key)}
+                          disabled={isBusy}
+                        >
+                          {style.label}
+                        </button>
+                      ))}
+                    </div>
                     <Textarea
                       placeholder="e.g. A 30-second commercial about a futuristic coffee shop with a robot barista..."
                       value={prompt}
@@ -607,13 +675,23 @@ export default function ScriptStep({ projectId, onBack, onProceedToVideo, regenP
                         <span className="text-xs text-muted-foreground">{prompt.length} characters</span>
                       </div>
                     )}
+                    {promptSafetyIssue && (
+                      <div className="prompt-guardrail-alert" role="alert">
+                        <AlertTriangle className="w-4 h-4" />
+                        <span>{promptSafetyIssue}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
               {(primaryAction || canContinueToVideo) && (
                 <div className="script-actions">
                   {primaryAction && (
-                    <Button className="generate-storyboard-btn" onClick={primaryAction.handler} disabled={isBusy}>
+                    <Button
+                      className="generate-storyboard-btn"
+                      onClick={primaryAction.handler}
+                      disabled={isBusy || (phase === PHASE.PROMPT && Boolean(promptSafetyIssue))}
+                    >
                       {primaryAction.loading ? (
                         <><Loader className="w-4 h-4 animate-spin mr-2" />Generating...</>
                       ) : (
