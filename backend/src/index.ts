@@ -94,6 +94,17 @@ app.use('/payments', requireDatabase, paymentRoutes);
 app.use('/clone', requireDatabase, cloneRoutes);
 app.use('/generation-lab', requireDatabase, generationLabRoutes);
 
+// Production-friendly API aliases. Static frontend hosts can reserve page paths
+// like /generation-lab while proxying backend traffic through /api.
+app.use('/api/auth', requireDatabase, authRoutes);
+app.use('/api/actors', requireDatabase, actorRoutes);
+app.use('/api/projects', requireDatabase, projectRoutes);
+app.use('/api/users', requireDatabase, userRoutes);
+app.use('/api/public', requireDatabase, infoRoutes);
+app.use('/api/payments', requireDatabase, paymentRoutes);
+app.use('/api/clone', requireDatabase, cloneRoutes);
+app.use('/api/generation-lab', requireDatabase, generationLabRoutes);
+
 // Error handler
 app.use(errorHandler);
 

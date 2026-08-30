@@ -1,7 +1,19 @@
 import axios from "axios";
 import { useAuthStore } from "../store/auth.store";
 
-export const base_url = (process.env.REACT_APP_BASE_URL || "http://localhost:3001").replace(/\/$/, "");
+const configuredBaseUrl = (process.env.REACT_APP_BASE_URL || "").trim();
+const isBrowser = typeof window !== "undefined";
+const isLocalFrontend =
+  isBrowser && ["localhost", "127.0.0.1"].includes(window.location.hostname);
+
+export const base_url = (
+  configuredBaseUrl ||
+  (isLocalFrontend
+    ? "http://localhost:3001"
+    : isBrowser
+      ? `${window.location.origin}/api`
+      : "http://localhost:3001")
+).replace(/\/$/, "");
 
 const headers = {
   "Content-Type": "application/json",
@@ -58,6 +70,30 @@ export const axiosInstance = axios.create({
   headers,
 });
 
+const enrichApiError = (error) => {
+  const requestUrl = error.config?.url || "";
+  const status = error.response?.status;
+  const requestOrigin = (() => {
+    try {
+      return new URL(requestUrl, error.config?.baseURL || window.location.origin).origin;
+    } catch {
+      return "";
+    }
+  })();
+
+  if (
+    status === 404 &&
+    isBrowser &&
+    requestOrigin === window.location.origin &&
+    requestUrl !== "/health"
+  ) {
+    error.message =
+      "API route not found on this domain. Set REACT_APP_BASE_URL to the deployed backend URL, or deploy the backend behind /api on the same domain.";
+  }
+
+  return error;
+};
+
 axiosInstance.interceptors.response.use(
   (response) => {
     if (response.data) {
@@ -65,7 +101,7 @@ axiosInstance.interceptors.response.use(
     }
     return response;
   },
-  (error) => Promise.reject(error)
+  (error) => Promise.reject(enrichApiError(error))
 );
 
 export const authAxios = axios.create({
@@ -90,7 +126,7 @@ authAxios.interceptors.response.use(
       useAuthStore.getState().clearAuth();
       window.location.href = "/login";
     }
-    return Promise.reject(error);
+    return Promise.reject(enrichApiError(error));
   },
 );
 

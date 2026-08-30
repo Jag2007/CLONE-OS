@@ -37,6 +37,15 @@ const activeStatuses = ["PENDING", "RUNNING"];
 const getResultUrl = (job) => job?.storageUrl || job?.resultUrl;
 const isVideoMode = (mode) => mode === "i2v" || mode === "t2v";
 
+function getErrorMessage(error) {
+  return (
+    error?.response?.data?.error ||
+    error?.response?.data?.message ||
+    error?.message ||
+    "Something went wrong."
+  );
+}
+
 function statusTone(status) {
   if (status === "SUCCEEDED") return "success";
   if (status === "FAILED") return "failed";
@@ -273,6 +282,13 @@ export default function GenerationLabPage() {
 
       {mode !== "history" ? (
         <form className="generation-lab-form" onSubmit={submit}>
+          {jobsQuery.isError ? (
+            <div className="generation-lab-error generation-lab-api-error">
+              <AlertCircle className="w-4 h-4" />
+              <span>{getErrorMessage(jobsQuery.error)}</span>
+            </div>
+          ) : null}
+
           <div className="generation-lab-panel">
             <label className="generation-lab-field generation-lab-field-wide">
               <span>Prompt</span>
@@ -456,6 +472,11 @@ export default function GenerationLabPage() {
           <div className="generation-lab-loading">
             <Loader2 className="w-6 h-6 animate-spin" />
             Loading history...
+          </div>
+        ) : jobsQuery.isError ? (
+          <div className="generation-lab-empty-state generation-lab-failed-state">
+            <AlertCircle className="w-8 h-8" />
+            {getErrorMessage(jobsQuery.error)}
           </div>
         ) : visibleJobs.length ? (
           <div className="generation-lab-jobs-grid">

@@ -527,6 +527,26 @@ html {
   line-height: 1.45;
 }
 
+.generation-lab-api-error {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-bottom: 1rem;
+}
+
+.generation-lab-api-error svg,
+.generation-lab-failed-state svg {
+  flex-shrink: 0;
+}
+
+.generation-lab-failed-state {
+  color: var(--destructive);
+  background: var(--destructive-muted);
+  border-color: color-mix(in srgb, var(--destructive) 42%, transparent);
+  padding: 1rem;
+  text-align: center;
+}
+
 .generation-lab-download {
   color: var(--accent);
   text-decoration: none;
