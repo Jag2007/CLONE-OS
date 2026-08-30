@@ -5,6 +5,7 @@ import {
   Video,
   Film,
   UserPlus,
+  FlaskConical,
   Menu,
   X,
   LogOut,
@@ -28,6 +29,7 @@ const navItems = [
   { to: "/create-video", label: "Create Video", icon: Video },
   { to: "/videos", label: "View Videos", icon: Film },
   { to: "/create-clone", label: "Make Clone", icon: UserPlus },
+  { to: "/generation-lab", label: "Generation Lab", icon: FlaskConical },
 ];
 
 const headerTap = { scale: 0.94 };

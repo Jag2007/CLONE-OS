@@ -5,6 +5,7 @@ import AppLayout from "./layouts/AppLayout";
 import CreateVideoPage from "./pages/CreateVideo/CreateVideoPage";
 import ViewVideosPage from "./pages/ViewVideos/ViewVideosPage";
 import CreateClonePage from "./pages/CreateClone/CreateClonePage";
+import GenerationLabPage from "./pages/GenerationLab/GenerationLabPage";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import { useAuthStore } from "./store/auth.store";
@@ -33,6 +34,7 @@ function App() {
             <Route path="create-video/:projectId" element={<CreateVideoPage />} />
             <Route path="videos" element={<ViewVideosPage />} />
             <Route path="create-clone" element={<CreateClonePage />} />
+            <Route path="generation-lab" element={<GenerationLabPage />} />
           </Route>
 
           {/* Public routes */}

@@ -17,6 +17,7 @@ import { authRoutes } from './routes/auth.routes';
 import infoRoutes from './routes/info.routes';
 import paymentRoutes from './routes/payment.routes';
 import { cloneRoutes } from './routes/clone.routes';
+import { generationLabRoutes } from './routes/generationLab.routes';
 
 const app = express();
 let databaseStartupError: unknown = null;
@@ -91,6 +92,7 @@ app.use('/public', requireDatabase, infoRoutes); // Non-auth public route
 
 app.use('/payments', requireDatabase, paymentRoutes);
 app.use('/clone', requireDatabase, cloneRoutes);
+app.use('/generation-lab', requireDatabase, generationLabRoutes);
 
 // Error handler
 app.use(errorHandler);

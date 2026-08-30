@@ -7,6 +7,7 @@ import { Scene } from '../entities/Scene';
 import { SceneSketch } from '../entities/SceneSketch';
 import { Info } from '../entities/Info';
 import { Feedback } from '../entities/Feedback';
+import { GenerationLabJob } from '../entities/GenerationLabJob';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -18,7 +19,7 @@ export const AppDataSource = new DataSource({
   ssl: config.database.ssl,
   synchronize: config.nodeEnv === 'development',
   // logging: config.nodeEnv === 'development',
-  entities: [User, Project, Actor, Scene, SceneSketch, Info, Feedback],
+  entities: [User, Project, Actor, Scene, SceneSketch, Info, Feedback, GenerationLabJob],
   migrations: ['src/migrations/*.ts'],
   subscribers: [],
 });
