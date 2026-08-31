@@ -10,10 +10,21 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import { useAuthStore } from "./store/auth.store";
 
+const GENERATION_LAB_ALLOWED_EMAIL = "demo1@cloneos.com";
+
 const ProtectedRoute = ({ children }) => {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   return children;
+};
+
+const GenerationLabRoute = () => {
+  const user = useAuthStore((state) => state.user);
+  if (user?.email?.toLowerCase() !== GENERATION_LAB_ALLOWED_EMAIL) {
+    return <Navigate to="/create-video" replace />;
+  }
+
+  return <GenerationLabPage />;
 };
 
 function App() {
@@ -34,7 +45,7 @@ function App() {
             <Route path="create-video/:projectId" element={<CreateVideoPage />} />
             <Route path="videos" element={<ViewVideosPage />} />
             <Route path="create-clone" element={<CreateClonePage />} />
-            <Route path="generation-lab" element={<GenerationLabPage />} />
+            <Route path="generation-lab" element={<GenerationLabRoute />} />
           </Route>
 
           {/* Public routes */}

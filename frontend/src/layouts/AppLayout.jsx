@@ -29,7 +29,12 @@ const navItems = [
   { to: "/create-video", label: "Create Video", icon: Video },
   { to: "/videos", label: "View Videos", icon: Film },
   { to: "/create-clone", label: "Make Clone", icon: UserPlus },
-  { to: "/generation-lab", label: "Generation Lab", icon: FlaskConical },
+  {
+    to: "/generation-lab",
+    label: "Generation Lab",
+    icon: FlaskConical,
+    allowedEmail: "demo1@cloneos.com",
+  },
 ];
 
 const headerTap = { scale: 0.94 };
@@ -207,7 +212,12 @@ export default function AppLayout() {
 
             <nav className="app-sidebar-nav">
               <p className="app-sidebar-section-label">Pages</p>
-              {navItems.map(({ to, label, icon: Icon }, i) => (
+              {navItems
+                .filter((item) => {
+                  if (!item.allowedEmail) return true;
+                  return user?.email?.toLowerCase() === item.allowedEmail;
+                })
+                .map(({ to, label, icon: Icon }, i) => (
                 <StaggerItemIndexed key={to} index={i} className="w-full">
                   <NavLink
                     to={to}
