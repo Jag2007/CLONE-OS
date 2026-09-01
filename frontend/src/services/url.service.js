@@ -48,7 +48,16 @@ function fixUrls(data) {
   }
 
   // Common URL keys used across pages/storyboards
-  const keysToClean = ["sketchUrl", "finalImageUrl", "storageUrl", "avatarUrl", "imageUrl", "videoUrl"];
+  const keysToClean = [
+    "sketchUrl",
+    "finalImageUrl",
+    "storageUrl",
+    "resultUrl",
+    "inputImageUrl",
+    "avatarUrl",
+    "imageUrl",
+    "videoUrl",
+  ];
   
   // Clone to avoid modifying read-only state properties directly if they are frozen
   const cleaned = {};

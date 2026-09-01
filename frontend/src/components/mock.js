@@ -1,4 +1,4 @@
-// Mock data for Cloners Dashboard
+// Mock data for Clone OS Dashboard
 
 
 export const mockLanguages = [

@@ -38,6 +38,10 @@ const getResultUrl = (job) => job?.storageUrl || job?.resultUrl;
 const isVideoMode = (mode) => mode === "i2v" || mode === "t2v";
 
 function getErrorMessage(error) {
+  if (error?.response?.status === 404) {
+    return "Generation Lab API was not found. Set REACT_APP_BASE_URL to the deployed backend URL in the frontend environment.";
+  }
+
   return (
     error?.response?.data?.error ||
     error?.response?.data?.message ||
@@ -250,9 +254,7 @@ export default function GenerationLabPage() {
     <div className="generation-lab-page">
       <div className="generation-lab-header">
         <div>
-          <p className="generation-lab-eyebrow">Internal</p>
           <h1>Generation Lab</h1>
-          <p>Test Alan video and image jobs with saved history.</p>
         </div>
         <Button
           variant="ghost"

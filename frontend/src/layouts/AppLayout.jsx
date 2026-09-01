@@ -99,7 +99,7 @@ export default function AppLayout() {
             >
               <img
                 src="/logo.png"
-                alt="Cloners"
+                alt="Clone OS"
                 className="app-logo-img"
               />
             </motion.div>

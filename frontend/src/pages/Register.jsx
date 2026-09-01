@@ -134,7 +134,7 @@ const Register = () => {
           </StaggerItemIndexed>
           <StaggerItemIndexed index={1}>
             <p>
-              Join thousands of creators using Cloners to produce professional
+              Join thousands of creators using Clone OS to produce professional
               video content powered by artificial intelligence.
             </p>
           </StaggerItemIndexed>
@@ -171,7 +171,7 @@ const Register = () => {
           <StaggerItemIndexed index={0}>
             <div className="flex items-center justify-between gap-3 mb-6">
               <div className="auth-logo !mb-0 min-w-0">
-                <img src="/logo.png" alt="Cloners" />
+                <img src="/logo.png" alt="Clone OS" />
               </div>
               <ThemeToggleButton />
             </div>

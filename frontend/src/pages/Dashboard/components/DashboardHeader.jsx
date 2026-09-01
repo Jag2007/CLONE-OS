@@ -35,7 +35,7 @@ export default function DashboardHeader({ sidebarOpen, setSidebarOpen }) {
         <div className="logo-section">
           <img
             src="/logo.png"
-            alt="Cloners"
+            alt="Clone OS"
             className="logo"
           />
         </div>

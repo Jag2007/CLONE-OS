@@ -158,7 +158,7 @@ const Login = () => {
           <StaggerItemIndexed index={0}>
             <div className="flex items-center justify-between gap-3 mb-6">
               <div className="auth-logo !mb-0 min-w-0">
-                <img src="/logo.png" alt="Cloners" />
+                <img src="/logo.png" alt="Clone OS" />
               </div>
               <ThemeToggleButton />
             </div>
@@ -262,7 +262,7 @@ const Login = () => {
           <StaggerItemIndexed index={7}>
             <div className="auth-info-card">
               <p>
-                Welcome back to Cloners. Continue your creative journey with
+                Welcome back to Clone OS. Continue your creative journey with
                 AI-powered tools and manage your projects.
               </p>
             </div>

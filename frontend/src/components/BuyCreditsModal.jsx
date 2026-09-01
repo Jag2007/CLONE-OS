@@ -102,7 +102,7 @@ export default function BuyCreditsModal({ open, onClose }) {
         order_id: order.id,
         amount: order.amount,
         currency: order.currency || "INR",
-        name: "Cloners",
+        name: "Clone OS",
         description: `Buy ${credits} credits`,
         prefill: {
           email: user?.email || "",
