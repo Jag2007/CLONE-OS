@@ -50,10 +50,10 @@ export class GenerationLabJob {
   @Column({ type: 'text' })
   prompt!: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'text', nullable: true })
   model!: string | null;
 
-  @Column({ name: 'task_id', nullable: true })
+  @Column({ name: 'task_id', type: 'text', nullable: true })
   taskId!: string | null;
 
   @Column({ name: 'input_image_url', type: 'text', nullable: true })
