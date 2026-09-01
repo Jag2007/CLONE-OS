@@ -17,14 +17,17 @@ export class AuthService {
   private userRepository = AppDataSource.getRepository(User);
 
   async signup(email: string, password: string): Promise<{ user: User; token: string }> {
-    const existingUser = await this.userRepository.findOne({ where: { email } });
+    const normalizedEmail = email.trim().toLowerCase();
+    const existingUser = await this.userRepository.findOne({
+      where: { email: normalizedEmail },
+    });
 
     if (existingUser) {
       throw new AppError(400, 'User with this email already exists');
     }
 
     const user = this.userRepository.create({
-      email,
+      email: normalizedEmail,
       password,
       creditsBalance: 100,
     });
@@ -40,8 +43,9 @@ export class AuthService {
   }
 
   async login(email: string, password: string): Promise<{ user: User; token: string }> {
+    const normalizedEmail = email.trim().toLowerCase();
     const user = await this.userRepository.findOne({
-      where: { email },
+      where: { email: normalizedEmail },
       select: ['id', 'email', 'password', 'creditsBalance', 'createdAt', 'updatedAt'],
     });
 

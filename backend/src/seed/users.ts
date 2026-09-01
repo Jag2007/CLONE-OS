@@ -25,10 +25,7 @@ async function seedUsers() {
     });
 
     if (existing) {
-      existing.creditsBalance = userData.creditsBalance;
-      existing.password = userData.password; // Triggers BeforeUpdate hash hook
-      await userRepository.save(existing);
-      console.log(`Updated credentials/credits for existing user: ${userData.email}`);
+      console.log(`Seeded user already exists, preserving data: ${userData.email}`);
     } else {
       const user = userRepository.create({
         email: userData.email,
