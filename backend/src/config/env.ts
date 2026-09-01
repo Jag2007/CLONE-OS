@@ -29,6 +29,7 @@ const envSchema = z.object({
   REDIS_PASSWORD: z.string().optional(),
   JWT_SECRET: z.string(),
   JWT_EXPIRES_IN: z.string().default("7d"),
+  GOOGLE_CLIENT_ID: z.string().optional(),
   OPENAI_API_KEY: z.string(),
   OPENAI_SCRIPT_MODEL: z.string().default("gpt-4o"),
   OPENAI_SCRIPT_FALLBACK_MODEL: z.string().default("gpt-4o-mini"),
@@ -132,6 +133,9 @@ export const config = {
   jwt: {
     secret: env.JWT_SECRET,
     expiresIn: env.JWT_EXPIRES_IN,
+  },
+  google: {
+    clientId: env.GOOGLE_CLIENT_ID,
   },
   openai: {
     apiKey: env.OPENAI_API_KEY,

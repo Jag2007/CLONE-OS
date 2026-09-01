@@ -1,9 +1,11 @@
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { useToast } from "../hooks/use-toast";
-import { useRegister } from "../services/auth.service";
+import { useGoogleLogin, useRegister } from "../services/auth.service";
+import { useAuthStore } from "../store/auth.store";
+import GoogleAuthButton from "../components/GoogleAuthButton";
 import { ThemeToggleButton } from "../components/ThemeToggleButton";
 import { StaggerItemIndexed } from "../motion/Stagger";
 import {
@@ -20,7 +22,10 @@ import {
 const Register = () => {
   const navigate = useNavigate();
   const { mutateAsync: doRegister, isPending } = useRegister();
+  const { mutateAsync: doGoogleLogin, isPending: isGooglePending } =
+    useGoogleLogin();
   const { toast } = useToast();
+  const { setAuth } = useAuthStore();
 
   const [formData, setFormData] = useState({
     email: "",
@@ -37,6 +42,29 @@ const Register = () => {
       [e.target.name]: e.target.value,
     });
   };
+
+  const handleGoogleCredential = useCallback(async (credential) => {
+    setError(null);
+
+    try {
+      const result = await doGoogleLogin(credential);
+      setAuth(result.data.token, result.data.user);
+      toast({
+        title: "Success",
+        description: result.message || "Google login successful!",
+      });
+      navigate("/");
+    } catch (err) {
+      const data = err?.response?.data;
+      const message = data?.error || data?.message || "Google login failed";
+      setError(message);
+      toast({
+        title: "Google login failed",
+        description: message,
+        variant: "destructive",
+      });
+    }
+  }, [doGoogleLogin, navigate, setAuth, toast]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -106,7 +134,7 @@ const Register = () => {
           </StaggerItemIndexed>
           <StaggerItemIndexed index={1}>
             <p>
-              Join thousands of creators using DCVerse to produce professional
+              Join thousands of creators using Cloners to produce professional
               video content powered by artificial intelligence.
             </p>
           </StaggerItemIndexed>
@@ -143,8 +171,7 @@ const Register = () => {
           <StaggerItemIndexed index={0}>
             <div className="flex items-center justify-between gap-3 mb-6">
               <div className="auth-logo !mb-0 min-w-0">
-                <img src="/logo.png" alt="DCVerse" />
-                <span>DCVerse</span>
+                <img src="/logo.png" alt="Cloners" />
               </div>
               <ThemeToggleButton />
             </div>
@@ -264,6 +291,11 @@ const Register = () => {
               </Button>
             </StaggerItemIndexed>
           </form>
+
+          <GoogleAuthButton
+            onCredential={handleGoogleCredential}
+            disabled={isGooglePending}
+          />
 
           <StaggerItemIndexed index={7}>
             <div className="auth-footer-link">

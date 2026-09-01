@@ -1,4 +1,4 @@
-// Mock data for DCVerse Dashboard
+// Mock data for Cloners Dashboard
 
 
 export const mockLanguages = [

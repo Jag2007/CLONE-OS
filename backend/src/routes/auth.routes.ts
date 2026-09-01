@@ -8,6 +8,7 @@ const authController = new AuthController();
 
 router.post('/signup', authController.signup);
 router.post('/login', authController.login);
+router.post('/google', authController.googleLogin);
 router.get('/profile', authenticateToken, authController.getProfile);
 
 export { router as authRoutes };

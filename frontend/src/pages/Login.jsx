@@ -1,10 +1,11 @@
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { useToast } from "../hooks/use-toast";
 import { useAuthStore } from "../store/auth.store";
-import { useLogin } from "../services/auth.service";
+import { useGoogleLogin, useLogin } from "../services/auth.service";
+import GoogleAuthButton from "../components/GoogleAuthButton";
 import { ThemeToggleButton } from "../components/ThemeToggleButton";
 import { StaggerItemIndexed } from "../motion/Stagger";
 import {
@@ -22,6 +23,8 @@ const Login = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { mutateAsync: doLogin, isPending } = useLogin();
+  const { mutateAsync: doGoogleLogin, isPending: isGooglePending } =
+    useGoogleLogin();
   const { setAuth, setLoading, isLoading } = useAuthStore();
   const [formData, setFormData] = useState({
     email: "",
@@ -36,6 +39,32 @@ const Login = () => {
       [e.target.name]: e.target.value,
     });
   };
+
+  const handleGoogleCredential = useCallback(async (credential) => {
+    setError(null);
+    setLoading(true);
+
+    try {
+      const result = await doGoogleLogin(credential);
+      setAuth(result.data.token, result.data.user);
+      toast({
+        title: "Success",
+        description: result.message || "Google login successful!",
+      });
+      navigate("/");
+    } catch (err) {
+      const data = err?.response?.data;
+      const message = data?.error || data?.message || "Google login failed";
+      setError(message);
+      toast({
+        title: "Google login failed",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [doGoogleLogin, navigate, setAuth, setLoading, toast]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -129,8 +158,7 @@ const Login = () => {
           <StaggerItemIndexed index={0}>
             <div className="flex items-center justify-between gap-3 mb-6">
               <div className="auth-logo !mb-0 min-w-0">
-                <img src="/logo.png" alt="DCVerse" />
-                <span>DCVerse</span>
+                <img src="/logo.png" alt="Cloners" />
               </div>
               <ThemeToggleButton />
             </div>
@@ -220,6 +248,11 @@ const Login = () => {
             </StaggerItemIndexed>
           </form>
 
+          <GoogleAuthButton
+            onCredential={handleGoogleCredential}
+            disabled={isGooglePending || isLoading}
+          />
+
           <StaggerItemIndexed index={6}>
             <div className="auth-footer-link">
               Don't have an account? <Link to="/register">Create one</Link>
@@ -229,7 +262,7 @@ const Login = () => {
           <StaggerItemIndexed index={7}>
             <div className="auth-info-card">
               <p>
-                Welcome back to DCVerse. Continue your creative journey with
+                Welcome back to Cloners. Continue your creative journey with
                 AI-powered tools and manage your projects.
               </p>
             </div>

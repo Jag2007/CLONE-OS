@@ -737,9 +737,12 @@ html {
 }
 
 .logo {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-sm);
+  width: 132px;
+  height: 34px;
+  object-fit: contain;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 3px 8px;
 }
 
 .logo-text {
@@ -2487,9 +2490,12 @@ button:active:not(:disabled) {
 }
 
 .app-logo-img {
-  width: 28px;
-  height: 28px;
+  width: 132px;
+  height: 34px;
+  object-fit: contain;
   border-radius: 6px;
+  background: #ffffff;
+  padding: 3px 8px;
 }
 
 .app-logo-text {
@@ -3849,16 +3855,30 @@ button:active:not(:disabled) {
 }
 
 .auth-form-container .auth-logo img {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-sm);
+  width: 132px;
+  height: 34px;
+  object-fit: contain;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 3px 8px;
 }
 
 .auth-form-container .auth-logo span {
   font-weight: 700;
   font-size: 1.125rem;
   color: var(--text-primary);
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
+}
+
+.google-auth-wrap {
+  display: flex;
+  justify-content: center;
+  min-height: 44px;
+  margin-top: 1rem;
+}
+
+.google-auth-wrap > div {
+  width: 100%;
 }
 
 .auth-form-container h2 {

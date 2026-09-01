@@ -7,8 +7,9 @@ const prefix = '/auth';
 export const authApi = () => {
   const login = async (credentials) => axiosInstance.post(`${prefix}/login`, credentials);
   const register = async (userData) => axiosInstance.post(`${prefix}/signup`, userData);
+  const googleLogin = async (credential) => axiosInstance.post(`${prefix}/google`, { credential });
   const profile = async () => authAxios.get(`${prefix}/profile`);
-  return { login, register, profile };
+  return { login, register, googleLogin, profile };
 };
 
 // Compatibility export for Dashboard.jsx
@@ -46,6 +47,19 @@ export function useRegister(options = {}) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (userData) => register(userData).then(res => res.data),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['auth', 'profile'] });
+      await queryClient.refetchQueries({ queryKey: ['auth', 'profile'] });
+    },
+    ...options,
+  });
+}
+
+export function useGoogleLogin(options = {}) {
+  const { googleLogin } = authApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (credential) => googleLogin(credential).then(res => res.data),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['auth', 'profile'] });
       await queryClient.refetchQueries({ queryKey: ['auth', 'profile'] });

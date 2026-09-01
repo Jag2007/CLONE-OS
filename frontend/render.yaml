@@ -20,3 +20,5 @@ services:
         sync: false
       - key: REACT_APP_TRAINING_API_URL
         sync: false
+      - key: REACT_APP_GOOGLE_CLIENT_ID
+        sync: false

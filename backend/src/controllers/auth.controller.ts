@@ -13,6 +13,10 @@ const loginSchema = z.object({
   password: z.string(),
 });
 
+const googleLoginSchema = z.object({
+  credential: z.string().min(1, 'Google credential is required'),
+});
+
 export class AuthController {
   private authService: AuthService;
 
@@ -72,6 +76,34 @@ export class AuthController {
           token,
         },
         message: 'Login successful',
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  googleLogin = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const validated = googleLoginSchema.parse(req.body);
+      const { user, token } = await this.authService.googleLogin(
+        validated.credential
+      );
+
+      res.json({
+        success: true,
+        data: {
+          user: {
+            id: user.id,
+            email: user.email,
+            creditsBalance: user.creditsBalance,
+          },
+          token,
+        },
+        message: 'Google login successful',
       });
     } catch (error) {
       next(error);
