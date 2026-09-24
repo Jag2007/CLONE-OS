@@ -4,6 +4,7 @@ import { Actor } from '../entities/Actor';
 import { ActorInfo } from '../types';
 
 const TRIGGER_WORDS: Record<string, string> = {
+  reina: 'reina',
   salman: 'sa1man',
   ryan: 'ry4n',
   emma: 'e4ma',
@@ -19,6 +20,7 @@ function toActorInfo(actor: Actor): ActorInfo {
     triggerWord: TRIGGER_WORDS[actor.name.toLowerCase()] || actor.name.toLowerCase(),
     costPerVideo: actor.costPerVideo,
     avatarUrl: actor.avatarUrl,
+    isPro: actor.isPro,
   };
 }
 

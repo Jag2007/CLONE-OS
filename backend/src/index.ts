@@ -18,6 +18,7 @@ import infoRoutes from './routes/info.routes';
 import paymentRoutes from './routes/payment.routes';
 import { cloneRoutes } from './routes/clone.routes';
 import { generationLabRoutes } from './routes/generationLab.routes';
+import { adminRoutes } from './routes/admin.routes';
 
 const app = express();
 let databaseStartupError: unknown = null;
@@ -93,6 +94,7 @@ app.use('/public', requireDatabase, infoRoutes); // Non-auth public route
 app.use('/payments', requireDatabase, paymentRoutes);
 app.use('/clone', requireDatabase, cloneRoutes);
 app.use('/generation-lab', requireDatabase, generationLabRoutes);
+app.use('/admin', requireDatabase, adminRoutes);
 
 // Production-friendly API aliases. Static frontend hosts can reserve page paths
 // like /generation-lab while proxying backend traffic through /api.
@@ -104,6 +106,7 @@ app.use('/api/public', requireDatabase, infoRoutes);
 app.use('/api/payments', requireDatabase, paymentRoutes);
 app.use('/api/clone', requireDatabase, cloneRoutes);
 app.use('/api/generation-lab', requireDatabase, generationLabRoutes);
+app.use('/api/admin', requireDatabase, adminRoutes);
 
 // Error handler
 app.use(errorHandler);

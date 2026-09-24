@@ -31,6 +31,7 @@ export interface ActorInfo {
   triggerWord: string;
   costPerVideo: number;
   avatarUrl?: string;
+  isPro?: boolean;
 }
 
 export interface ApiResponse<T> {

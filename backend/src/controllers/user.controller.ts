@@ -56,6 +56,8 @@ export class UserController {
         id: user.id,
         email: user.email,
         creditsBalance: user.creditsBalance,
+        plan: user.plan || 'free',
+        role: user.role || 'user',
       },
     });
   };

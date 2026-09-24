@@ -19,6 +19,9 @@ export class Actor {
   @Column({ name: 'avatar_url', nullable: true })
   avatarUrl!: string;
 
+  @Column({ name: 'is_pro', type: 'boolean', default: false })
+  isPro!: boolean;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt!: Date;
 }

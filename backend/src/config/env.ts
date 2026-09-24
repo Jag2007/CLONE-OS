@@ -6,9 +6,10 @@ import { z } from "zod";
 dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
 const envSchema = z.object({
-  RAZORPAY_KEY_ID: z.string(),
-  RAZORPAY_KEY_SECRET: z.string(),
-  RAZORPAY_WEBHOOK_SECRET: z.string(),
+  RAZORPAY_KEY_ID: z.string().optional().default(""),
+  RAZORPAY_KEY_SECRET: z.string().optional().default(""),
+  RAZORPAY_WEBHOOK_SECRET: z.string().optional().default(""),
+  ADMIN_EMAILS: z.string().optional().default("admin@cloneos.ai"),
   PORT: z.string().default("3000"),
   FRONTEND_URL: z.string().default("http://localhost:3000"),
   CORS_ORIGINS: z.string().optional(),
@@ -94,6 +95,10 @@ const envSchema = z.object({
 const env = envSchema.parse(process.env);
 
 export const config = {
+  adminEmails: (env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean),
   razorpay: {
     keyId: env.RAZORPAY_KEY_ID,
     keySecret: env.RAZORPAY_KEY_SECRET,

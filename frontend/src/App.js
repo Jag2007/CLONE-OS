@@ -8,6 +8,7 @@ import CreateClonePage from "./pages/CreateClone/CreateClonePage";
 import GenerationLabPage from "./pages/GenerationLab/GenerationLabPage";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import AdminPage from "./pages/Admin/AdminPage";
 import { useAuthStore } from "./store/auth.store";
 
 const GENERATION_LAB_ALLOWED_EMAIL = "demo1@cloneos.com";
@@ -25,6 +26,15 @@ const GenerationLabRoute = () => {
   }
 
   return <GenerationLabPage />;
+};
+
+const AdminRoute = () => {
+  const user = useAuthStore((state) => state.user);
+  if (user?.role !== "admin") {
+    return <Navigate to="/create-video" replace />;
+  }
+
+  return <AdminPage />;
 };
 
 function App() {
@@ -46,6 +56,7 @@ function App() {
             <Route path="videos" element={<ViewVideosPage />} />
             <Route path="create-clone" element={<CreateClonePage />} />
             <Route path="generation-lab" element={<GenerationLabRoute />} />
+            <Route path="admin" element={<AdminRoute />} />
           </Route>
 
           {/* Public routes */}

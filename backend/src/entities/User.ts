@@ -20,11 +20,17 @@ export class User {
   @Column({ unique: true })
   email!: string;
 
-  @Column({ select: false })
-  password!: string;
+  @Column({ select: false, nullable: true })
+  password?: string;
 
   @Column({ name: 'credits_balance', type: 'int', default: 100 })
   creditsBalance!: number;
+
+  @Column({ type: 'varchar', default: 'free' })
+  plan!: 'free' | 'pro';
+
+  @Column({ type: 'varchar', default: 'user' })
+  role!: 'user' | 'admin';
 
   @OneToMany(() => Project, (project) => project.user)
   projects!: Project[];
@@ -38,12 +44,13 @@ export class User {
   @BeforeInsert()
   @BeforeUpdate()
   async hashPassword() {
-    if (this.password) {
+    if (this.password && !this.password.startsWith('$2a$') && !this.password.startsWith('$2b$')) {
       this.password = await bcrypt.hash(this.password, 10);
     }
   }
 
   async comparePassword(candidatePassword: string): Promise<boolean> {
+    if (!this.password) return false;
     return bcrypt.compare(candidatePassword, this.password);
   }
 }

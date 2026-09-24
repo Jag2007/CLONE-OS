@@ -3,7 +3,7 @@ import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
 import { Skeleton } from "../../../components/ui/skeleton";
-import { Check, User, ArrowRight, Loader } from "lucide-react";
+import { Check, User, ArrowRight, Loader, Crown, Sparkles } from "lucide-react";
 import { useGetAllActors } from "../../../services/actor.service";
 import { useCreateProject } from "../../../services/project.service";
 import { useUser } from "../../../store/auth.store";
@@ -18,14 +18,34 @@ export default function VideoNameStep({ onCreated }) {
   const { mutateAsync: createProject, isPending: creating } =
     useCreateProject();
 
+  const isUserPro = user?.plan === "pro" || user?.role === "admin";
+
   React.useEffect(() => {
     if (actors && actors.length > 0 && !selectedActorId) {
-      const tarina = actors.find((a) => a.name.toLowerCase() === "tarina");
-      if (tarina) {
-        setSelectedActorId(tarina.id);
+      // Default to Reina (Free) or first accessible actor
+      const reina = actors.find((a) => a.name.toLowerCase() === "reina");
+      const defaultActor = reina || actors.find((a) => !a.isPro) || actors[0];
+      if (defaultActor) {
+        setSelectedActorId(defaultActor.id);
       }
     }
   }, [actors, selectedActorId]);
+
+  const handleActorClick = (actor) => {
+    const isProActor = actor.isPro || actor.name.toLowerCase() === "tarina";
+    if (isProActor && !isUserPro) {
+      toast({
+        title: "Pro Actor Locked",
+        description: `${actor.name} requires a Pro Plan subscription. Click to upgrade with Razorpay!`,
+        variant: "destructive",
+      });
+      window.dispatchEvent(
+        new CustomEvent("openBuyCredits", { detail: { tab: "pro" } })
+      );
+      return;
+    }
+    setSelectedActorId(actor.id);
+  };
 
   const handleNext = async () => {
     if (!videoName.trim()) {
@@ -44,6 +64,21 @@ export default function VideoNameStep({ onCreated }) {
       });
       return;
     }
+
+    const selectedActor = actors.find((a) => a.id === selectedActorId);
+    const isProActor = selectedActor?.isPro || selectedActor?.name?.toLowerCase() === "tarina";
+    if (isProActor && !isUserPro) {
+      toast({
+        title: "Pro Plan Required",
+        description: `${selectedActor?.name || "Tarina"} is locked for Free plan users. Please upgrade to Pro.`,
+        variant: "destructive",
+      });
+      window.dispatchEvent(
+        new CustomEvent("openBuyCredits", { detail: { tab: "pro" } })
+      );
+      return;
+    }
+
     try {
       const result = await createProject({
         projectName: videoName.trim(),
@@ -66,7 +101,7 @@ export default function VideoNameStep({ onCreated }) {
       <div className="cv-step-header">
         <h2 className="cv-step-title">New Video</h2>
         <p className="cv-step-desc">
-          Name your video and pick the actor who will appear in it.
+          Name your video and pick the actor who will appear in it. Free AI influencers like <strong>Reina</strong> are unlocked!
         </p>
       </div>
 
@@ -89,7 +124,24 @@ export default function VideoNameStep({ onCreated }) {
 
         {/* Actor selection */}
         <div className="cv-field">
-          <Label className="cv-label">Choose actor</Label>
+          <div className="flex items-center justify-between mb-2">
+            <Label className="cv-label mb-0">Choose actor</Label>
+            {!isUserPro && (
+              <button
+                type="button"
+                onClick={() =>
+                  window.dispatchEvent(
+                    new CustomEvent("openBuyCredits", { detail: { tab: "pro" } })
+                  )
+                }
+                className="text-xs text-amber-400 hover:underline flex items-center gap-1 font-semibold"
+              >
+                <Crown className="w-3.5 h-3.5" />
+                Unlock Tarina & Pro Actors
+              </button>
+            )}
+          </div>
+
           {loadingActors ? (
             <div className="cv-actors-grid">
               {[1, 2, 3, 4].map((i) => (
@@ -110,17 +162,19 @@ export default function VideoNameStep({ onCreated }) {
                 const imgSrc =
                   actor.avatarUrl || actor.imageUrl || actor.avatar_url || "";
                 const isSelected = selectedActorId === actor.id;
-                const isTarina = actor.name.toLowerCase() === "tarina";
-                const isDisabled = !isTarina;
+                const isProActor = actor.isPro || actor.name.toLowerCase() === "tarina";
+                const isLocked = isProActor && !isUserPro;
+
                 return (
                   <button
                     key={actor.id}
                     type="button"
-                    disabled={isDisabled}
-                    onClick={() => setSelectedActorId(actor.id)}
-                    className={`cv-actor-card${isSelected ? " selected" : ""}${isDisabled ? " disabled" : ""}`}
+                    onClick={() => handleActorClick(actor)}
+                    className={`cv-actor-card transition-all relative overflow-hidden ${
+                      isSelected ? "selected ring-2 ring-primary" : ""
+                    } ${isLocked ? "border-amber-500/40 bg-amber-500/5" : ""}`}
                   >
-                    <div className="cv-actor-img-wrap">
+                    <div className="cv-actor-img-wrap relative">
                       {imgSrc ? (
                         <img
                           src={imgSrc}
@@ -133,6 +187,17 @@ export default function VideoNameStep({ onCreated }) {
                       ) : (
                         <User className="w-8 h-8 text-muted-foreground" />
                       )}
+                      
+                      {isProActor ? (
+                        <span className="absolute top-1.5 left-1.5 z-10 px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-amber-500 text-black shadow flex items-center gap-0.5 uppercase">
+                          <Crown className="w-2.5 h-2.5" /> PRO
+                        </span>
+                      ) : (
+                        <span className="absolute top-1.5 left-1.5 z-10 px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-emerald-500 text-black shadow flex items-center gap-0.5 uppercase">
+                          FREE
+                        </span>
+                      )}
+
                       {isSelected && (
                         <div className="cv-actor-selected-overlay">
                           <div className="cv-actor-check">
@@ -141,10 +206,13 @@ export default function VideoNameStep({ onCreated }) {
                         </div>
                       )}
                     </div>
-                    <p className="cv-actor-name">{actor.name}</p>
-                    {actor.costPerVideo != null && (
-                      <p className="cv-actor-cost">{actor.costPerVideo} cr</p>
-                    )}
+
+                    <p className="cv-actor-name font-semibold text-xs mt-2 flex items-center justify-center gap-1">
+                      {actor.name}
+                    </p>
+                    <p className="cv-actor-cost text-[11px] text-muted-foreground">
+                      {actor.costPerVideo === 0 ? "Free" : `${actor.costPerVideo} cr`}
+                    </p>
                   </button>
                 );
               })}

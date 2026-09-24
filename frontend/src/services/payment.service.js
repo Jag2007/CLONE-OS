@@ -6,28 +6,39 @@ const AUTH_PROFILE_PREFIX = '/auth';
 const USERS_PREFIX = '/users';
 
 /**
- * Create a Razorpay order for buying credits.
+ * Create a Razorpay order for buying credits or pro plan.
  * @param {number} amount - Amount in rupees
- * @returns {Promise<{ order: { id: string, amount: number, currency: string } }>}
+ * @param {string} [purchaseType='credits'] - 'credits' | 'pro'
+ * @returns {Promise<{ order: { id: string, amount: number, currency: string }, isMock?: boolean }>}
  */
-export async function createOrder(amount) {
-  const res = await authAxios.post(`${PAYMENTS_PREFIX}/buy-credits`, { amount });
+export async function createOrder(amount, purchaseType = 'credits') {
+  const res = await authAxios.post(`${PAYMENTS_PREFIX}/buy-credits`, { amount, purchaseType });
   const data = res.data;
   const order = data?.order;
   if (!order) throw new Error(data?.message || 'Failed to create order');
-  return { order };
+  return { order, isMock: data.isMock };
 }
 
 /**
- * Refetch user profile and update auth store (including creditsBalance).
+ * Verify Razorpay payment and update account status in DB immediately.
+ */
+export async function verifyPaymentPayload(payload) {
+  const res = await authAxios.post(`${PAYMENTS_PREFIX}/verify`, payload);
+  const data = res.data;
+  if (data?.user) {
+    const current = useAuthStore.getState().user;
+    useAuthStore.getState().setUser({ ...current, ...data.user });
+  }
+  return data;
+}
+
+/**
+ * Refetch user profile and update auth store (including creditsBalance, plan, role).
  * Use after successful payment so the header badge and persisted user stay in sync.
  */
 export async function refetchProfileAndUpdateStore() {
   const res = await authAxios.get(`${AUTH_PROFILE_PREFIX}/profile`);
   const data = res.data?.data ?? res.data;
-  if (data?.creditsBalance !== undefined) {
-    useAuthStore.getState().updateCredits(data.creditsBalance);
-  }
   if (data) {
     const current = useAuthStore.getState().user;
     useAuthStore.getState().setUser({ ...current, ...data });
@@ -36,7 +47,7 @@ export async function refetchProfileAndUpdateStore() {
 }
 
 /**
- * Get current user's credits from backend (optional; profile refetch also returns credits).
+ * Get current user's credits from backend.
  */
 export async function getCredits() {
   const res = await authAxios.get(`${USERS_PREFIX}/credits`);

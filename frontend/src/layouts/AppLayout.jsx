@@ -14,6 +14,8 @@ import {
   BookOpen,
   Zap,
   CheckSquare,
+  Shield,
+  Crown,
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { ThemeToggleButton } from "../components/ThemeToggleButton";
@@ -35,6 +37,12 @@ const navItems = [
     icon: FlaskConical,
     allowedEmail: "demo1@cloneos.com",
   },
+  {
+    to: "/admin",
+    label: "Admin Console",
+    icon: Shield,
+    requireAdmin: true,
+  },
 ];
 
 const headerTap = { scale: 0.94 };
@@ -43,6 +51,7 @@ const headerHover = { scale: 1.04 };
 export default function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [buyCreditsOpen, setBuyCreditsOpen] = useState(false);
+  const [buyCreditsTab, setBuyCreditsTab] = useState("credits");
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
@@ -50,7 +59,10 @@ export default function AppLayout() {
   const isDesktop = useMediaQuery("(min-width: 1025px)");
 
   useEffect(() => {
-    const openBuyCredits = () => setBuyCreditsOpen(true);
+    const openBuyCredits = (e) => {
+      setBuyCreditsTab(e?.detail?.tab || "credits");
+      setBuyCreditsOpen(true);
+    };
     window.addEventListener("openBuyCredits", openBuyCredits);
     return () => window.removeEventListener("openBuyCredits", openBuyCredits);
   }, []);
@@ -66,6 +78,8 @@ export default function AppLayout() {
   };
 
   const userInitials = user?.email ? user.email.charAt(0).toUpperCase() : "U";
+  const isPro = user?.plan === "pro";
+  const isAdmin = user?.role === "admin";
 
   const sidebarX = isDesktop ? 0 : sidebarOpen ? 0 : "-100%";
 
@@ -93,7 +107,8 @@ export default function AppLayout() {
               </Button>
             </motion.span>
             <motion.div
-              className="app-logo"
+              className="app-logo cursor-pointer"
+              onClick={() => navigate("/create-video")}
               whileHover={{ scale: 1.02 }}
               transition={springSnappy}
             >
@@ -124,7 +139,10 @@ export default function AppLayout() {
                     variant="ghost"
                     size="sm"
                     className="app-credits-badge"
-                    onClick={() => setBuyCreditsOpen(true)}
+                    onClick={() => {
+                      setBuyCreditsTab("credits");
+                      setBuyCreditsOpen(true);
+                    }}
                     title="Buy credits"
                   >
                     <CreditCard className="w-3.5 h-3.5 text-primary" />
@@ -133,11 +151,24 @@ export default function AppLayout() {
                 </motion.span>
                 <BuyCreditsModal
                   open={buyCreditsOpen}
+                  defaultTab={buyCreditsTab}
                   onClose={() => setBuyCreditsOpen(false)}
                 />
-                <div className="app-user-badge">
-                  <div className="app-user-avatar">{userInitials}</div>
-                  <span className="app-user-email">{user.email}</span>
+                <div className="app-user-badge relative flex items-center gap-1.5">
+                  <div className="app-user-avatar relative">
+                    {userInitials}
+                    {isPro && (
+                      <Crown className="w-3 h-3 text-amber-400 absolute -top-1 -right-1 drop-shadow" />
+                    )}
+                  </div>
+                  <span className="app-user-email flex items-center gap-1">
+                    {user.email}
+                    {isPro && (
+                      <span className="px-1 py-0.2 text-[9px] font-extrabold bg-amber-400/20 text-amber-300 border border-amber-400/30 rounded uppercase tracking-wider">
+                        PRO
+                      </span>
+                    )}
+                  </span>
                 </div>
                 <motion.span
                   whileHover={headerHover}
@@ -213,8 +244,9 @@ export default function AppLayout() {
               <p className="app-sidebar-section-label">Pages</p>
               {navItems
                 .filter((item) => {
-                  if (!item.allowedEmail) return true;
-                  return user?.email?.toLowerCase() === item.allowedEmail;
+                  if (item.requireAdmin && user?.role !== "admin") return false;
+                  if (item.allowedEmail && user?.email?.toLowerCase() !== item.allowedEmail) return false;
+                  return true;
                 })
                 .map(({ to, label, icon: Icon }, i) => (
                 <StaggerItemIndexed key={to} index={i} className="w-full">

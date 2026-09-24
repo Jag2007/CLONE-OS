@@ -17,6 +17,7 @@ import {
   Sparkles,
   Film,
   Palette,
+  Zap,
 } from "lucide-react";
 
 const Login = () => {
@@ -48,10 +49,10 @@ const Login = () => {
       const result = await doGoogleLogin(credential);
       setAuth(result.data.token, result.data.user);
       toast({
-        title: "Success",
-        description: result.message || "Google login successful!",
+        title: "Welcome to Clone OS!",
+        description: result.message || "Google login successful",
       });
-      navigate("/");
+      navigate("/create-video");
     } catch (err) {
       const data = err?.response?.data;
       const message = data?.error || data?.message || "Google login failed";
@@ -65,6 +66,47 @@ const Login = () => {
       setLoading(false);
     }
   }, [doGoogleLogin, navigate, setAuth, setLoading, toast]);
+
+  const handleDemoLogin = async (email = "demo1@cloneos.com") => {
+    setError(null);
+    setLoading(true);
+    try {
+      // Simulate Google OAuth token response for demo account
+      const demoJwtHeader = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+      const demoJwtPayload = btoa(
+        JSON.stringify({
+          email,
+          email_verified: true,
+          name: email.split("@")[0],
+          sub: "demo-google-uid-12345",
+        })
+      );
+      const mockGoogleCredential = `${demoJwtHeader}.${demoJwtPayload}.mock_signature`;
+
+      const result = await doGoogleLogin(mockGoogleCredential);
+      setAuth(result.data.token, result.data.user);
+      toast({
+        title: "Logged in via Google OAuth",
+        description: `Signed in as ${result.data.user.email}`,
+      });
+      navigate("/create-video");
+    } catch (err) {
+      // Fall back to standard login if mock token fails
+      try {
+        const result = await doLogin({ email, password: "Password123!" });
+        setAuth(result.data.token, result.data.user);
+        toast({
+          title: "Logged in successfully",
+          description: `Signed in as ${result.data.user.email}`,
+        });
+        navigate("/create-video");
+      } catch (fallbackErr) {
+        setError("Demo login failed");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -88,7 +130,7 @@ const Login = () => {
         title: "Success",
         description: result.message || "Login successful!",
       });
-      navigate("/");
+      navigate("/create-video");
     } catch (err) {
       const data = err?.response?.data;
       const status = err?.response?.status;
@@ -146,7 +188,7 @@ const Login = () => {
               <div className="auth-feature-icon">
                 <Palette className="w-4 h-4" />
               </div>
-              <span>Customizable actors and visual styles</span>
+              <span>Customizable actors like Reina & Tarina</span>
             </div>
           </StaggerItemIndexed>
         </div>
@@ -168,11 +210,39 @@ const Login = () => {
             <h2>Welcome back</h2>
           </StaggerItemIndexed>
           <StaggerItemIndexed index={2}>
-            <p className="auth-subtitle">Sign in to your account to continue</p>
+            <p className="auth-subtitle">Sign in to your account with Google or email</p>
           </StaggerItemIndexed>
 
+          {/* Primary Google Auth Action */}
+          <StaggerItemIndexed index={3} className="space-y-3 mb-6">
+            <GoogleAuthButton
+              onCredential={handleGoogleCredential}
+              disabled={isGooglePending || isLoading}
+            />
+
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => handleDemoLogin("demo1@cloneos.com")}
+              disabled={isLoading || isPending}
+              className="w-full h-11 border-border/80 hover:bg-muted font-medium text-xs flex items-center justify-center gap-2 rounded-lg"
+            >
+              <Zap className="w-4 h-4 text-amber-400" />
+              Quick One-Click Demo Login
+            </Button>
+          </StaggerItemIndexed>
+
+          <div className="relative flex items-center justify-center mb-6">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t border-border/60" />
+            </div>
+            <span className="relative bg-background px-3 text-xs text-muted-foreground uppercase font-medium">
+              Or password login
+            </span>
+          </div>
+
           <form onSubmit={handleSubmit}>
-            <StaggerItemIndexed index={3}>
+            <StaggerItemIndexed index={4}>
               <div className="auth-input-group">
                 <label htmlFor="email">Email</label>
                 <div className="relative">
@@ -192,7 +262,7 @@ const Login = () => {
               </div>
             </StaggerItemIndexed>
 
-            <StaggerItemIndexed index={4}>
+            <StaggerItemIndexed index={5}>
               <div className="auth-input-group">
                 <label htmlFor="password">Password</label>
                 <div className="relative">
@@ -227,7 +297,7 @@ const Login = () => {
               <div className="text-red-400 text-sm mb-4 px-1">{error}</div>
             )}
 
-            <StaggerItemIndexed index={5}>
+            <StaggerItemIndexed index={6}>
               <Button
                 type="submit"
                 className="w-full h-11 btn-gradient-primary font-semibold transition-colors rounded-lg"
@@ -240,7 +310,7 @@ const Login = () => {
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
-                    Sign in
+                    Sign in with Password
                     <ArrowRight className="w-4 h-4" />
                   </div>
                 )}
@@ -248,23 +318,9 @@ const Login = () => {
             </StaggerItemIndexed>
           </form>
 
-          <GoogleAuthButton
-            onCredential={handleGoogleCredential}
-            disabled={isGooglePending || isLoading}
-          />
-
-          <StaggerItemIndexed index={6}>
-            <div className="auth-footer-link">
-              Don't have an account? <Link to="/register">Create one</Link>
-            </div>
-          </StaggerItemIndexed>
-
           <StaggerItemIndexed index={7}>
-            <div className="auth-info-card">
-              <p>
-                Welcome back to Clone OS. Continue your creative journey with
-                AI-powered tools and manage your projects.
-              </p>
+            <div className="auth-footer-link mt-6">
+              Don't have an account? <Link to="/register">Create one</Link>
             </div>
           </StaggerItemIndexed>
         </div>
