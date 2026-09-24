@@ -79,7 +79,10 @@ export default function AppLayout() {
 
   const userInitials = user?.email ? user.email.charAt(0).toUpperCase() : "U";
   const isPro = user?.plan === "pro";
-  const isAdmin = user?.role === "admin";
+  const emailLower = user?.email?.toLowerCase();
+  const isAdmin =
+    user?.role === "admin" ||
+    (emailLower && ["demo1@cloneos.com", "admin@cloneos.com", "arnav@cloneos.com"].includes(emailLower));
 
   const sidebarX = isDesktop ? 0 : sidebarOpen ? 0 : "-100%";
 
@@ -244,7 +247,7 @@ export default function AppLayout() {
               <p className="app-sidebar-section-label">Pages</p>
               {navItems
                 .filter((item) => {
-                  if (item.requireAdmin && user?.role !== "admin") return false;
+                  if (item.requireAdmin && !isAdmin) return false;
                   if (item.allowedEmail && user?.email?.toLowerCase() !== item.allowedEmail) return false;
                   return true;
                 })

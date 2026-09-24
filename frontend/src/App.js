@@ -28,9 +28,20 @@ const GenerationLabRoute = () => {
   return <GenerationLabPage />;
 };
 
+const ADMIN_EMAILS_CLIENT = [
+  "demo1@cloneos.com",
+  "admin@cloneos.com",
+  "arnav@cloneos.com",
+];
+
 const AdminRoute = () => {
   const user = useAuthStore((state) => state.user);
-  if (user?.role !== "admin") {
+  const emailLower = user?.email?.toLowerCase();
+  const isAdmin =
+    user?.role === "admin" ||
+    (emailLower && ADMIN_EMAILS_CLIENT.includes(emailLower));
+
+  if (!isAdmin) {
     return <Navigate to="/create-video" replace />;
   }
 
