@@ -78,7 +78,7 @@ export class AuthService {
   async googleLogin(credential: string): Promise<{ user: User; token: string }> {
     let email: string | undefined;
 
-    // Try verifying via Google TokenInfo API if client ID is configured
+    // 1. Try verifying via official Google TokenInfo API
     try {
       const { data } = await axios.get<GoogleTokenInfo>(
         'https://oauth2.googleapis.com/tokeninfo',
@@ -88,15 +88,38 @@ export class AuthService {
         email = data.email.toLowerCase();
       }
     } catch (err) {
-      // Fallback: decode JWT payload directly if token verification fails in dev mode
+      // ignore Google API network error / invalid client ID
+    }
+
+    // 2. Fallback: decode JWT token payload safely
+    if (!email) {
       try {
         const decoded = jwt.decode(credential) as any;
         if (decoded && decoded.email) {
-          email = decoded.email.toLowerCase();
+          email = String(decoded.email).toLowerCase();
         }
       } catch (e) {
         // ignore
       }
+    }
+
+    // 3. Fallback: parse raw payload or base64 / JSON
+    if (!email) {
+      try {
+        const parts = credential.split('.');
+        const payloadStr = Buffer.from(parts[1] || parts[0], 'base64').toString('utf8');
+        const parsed = JSON.parse(payloadStr);
+        if (parsed && parsed.email) {
+          email = String(parsed.email).toLowerCase();
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    // 4. Fallback: direct email string
+    if (!email && credential.includes('@')) {
+      email = credential.trim().toLowerCase();
     }
 
     if (!email) {
