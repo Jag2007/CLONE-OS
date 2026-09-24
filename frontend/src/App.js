@@ -62,6 +62,9 @@ function App() {
           {/* Public routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+
+          {/* Catch-all fallback for /index.html and any unmatched routes */}
+          <Route path="*" element={<Navigate to="/create-video" replace />} />
         </Routes>
       </BrowserRouter>
     </div>
